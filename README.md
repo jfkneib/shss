@@ -44,7 +44,7 @@ echo 'source /home/jfk/git/dev/miniai/shell-integration/miniai.bash' >> ~/.bashr
 
 Détails, limites et piège à connaître (bash traite `#@ ... @#` comme un
 commentaire si on presse Entrée sans passer par `Ctrl-G` d'abord) dans
-[docs/getting-started.md](docs/getting-started.md#6-intégration-dans-ta-console-bash-normale-sans-lancer-binminiai).
+[docs/getting-started.md](docs/getting-started.md#7-intégration-dans-ta-console-bash-normale-sans-lancer-binminiai).
 
 ## Modèle LLM
 
