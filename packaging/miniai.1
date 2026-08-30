@@ -60,7 +60,11 @@ demande, contexte, résultat, type). Voir l'option \fB\-\-history\fR.
 .SH RACCOURCI CTRL\-G
 Dans le REPL, \fBCtrl\-G\fR résout immédiatement la balise la plus proche
 du curseur — fermée par \fB@#\fR ou encore en cours de frappe — sans
-attendre Entrée.
+attendre Entrée. Avant d'appliquer le résultat, il l'affiche (le
+fragment, ou le script entier en mode script) et demande confirmation
+(\fButiliser ce résultat ? [O/n]\fR) ; répondre non laisse la ligne
+inchangée. Cette confirmation n'existe que pour \fBCtrl\-G\fR — la
+résolution automatique d'une balise fermée à l'Entrée reste directe.
 .PP
 Ce même raccourci peut être branché directement dans une console bash
 normale (sans lancer \fBmini\fR), en ajoutant à son \fB~/.bashrc\fR :

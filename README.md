@@ -55,7 +55,22 @@ Mode one-shot (comme `bash -c`) :
 
 Dans le REPL, `Ctrl-G` résout immédiatement la balise la plus proche du
 curseur — qu'elle soit déjà fermée par `@#` ou encore en cours de frappe —
-sans attendre Entrée.
+sans attendre Entrée. Avant d'appliquer le résultat, `Ctrl-G` affiche ce
+qui serait inséré (le fragment, ou le contenu complet du script en mode
+script) et demande confirmation :
+
+```text
+miniai propose :
+-S
+
+Utiliser ce résultat ? [O/n]
+```
+
+Répondre non (`n`) laisse la ligne inchangée, comme si `Ctrl-G` n'avait
+pas été pressé. Cette confirmation n'existe que pour `Ctrl-G` — la
+résolution automatique d'une balise déjà fermée à l'Entrée (REPL ou `-c`)
+reste directe, sans prompt, pour ne pas casser des usages non
+interactifs.
 
 ### Intégration dans ta console bash normale (sans ./bin/miniai)
 

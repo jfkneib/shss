@@ -140,6 +140,13 @@ par `@#` ou pas — et insère le résultat dans la ligne, sans attendre
 Entrée. Marche aussi bien avec `#@ ta demande` (non fermée) qu'avec
 `#@ ta demande @#` (fermée).
 
+Avant d'insérer quoi que ce soit, `Ctrl-G` affiche ce qui serait utilisé
+(le fragment, ou le script entier en mode script — voir section 8) et
+demande confirmation : `Utiliser ce résultat ? [O/n]`. Répondre non
+laisse la ligne inchangée. C'est le seul moment où une confirmation est
+demandée : la résolution automatique d'une balise fermée à l'Entrée
+(REPL/`-c`) reste directe, pour ne pas gêner un usage scripté.
+
 ## 7. Intégration dans ta console bash normale (sans lancer ./bin/miniai)
 
 Plutôt que de lancer un shell séparé, `Ctrl-G` peut être branché directement
@@ -160,11 +167,14 @@ prompt bash normal :
 jfk@jfk-XPS-8940 ~ $ ls #@ trie par taille
 ```
 
-Tape `Ctrl-G` (pas besoin de fermer par `@#`, ni d'appuyer sur Entrée) : la
-ligne devient immédiatement `ls -S`, modifiable avant de valider avec
-Entrée comme n'importe quelle commande bash normale. Si tu préfères fermer
-la balise toi-même (`ls #@ trie par taille @#`) avant de faire `Ctrl-G`,
-ça marche aussi — dans les deux cas c'est `Ctrl-G` qui déclenche la
+Tape `Ctrl-G` (pas besoin de fermer par `@#`, ni d'appuyer sur Entrée) :
+miniai affiche `-S` et demande `Utiliser ce résultat ? [O/n]` — valide
+avec Entrée (ou `o`) pour accepter, la ligne devient alors `ls -S`,
+modifiable avant de l'exécuter comme n'importe quelle commande bash
+normale. Tape `n` pour refuser : la ligne reste inchangée, tu peux
+reformuler ta demande et refaire `Ctrl-G`. Si tu préfères fermer la
+balise toi-même (`ls #@ trie par taille @#`) avant de faire `Ctrl-G`, ça
+marche aussi — dans les deux cas c'est `Ctrl-G` qui déclenche la
 résolution, jamais Entrée seul.
 
 **Piège à connaître** : si tu tapes la balise complète `#@ ... @#` et
@@ -192,6 +202,14 @@ unique, rendu exécutable, et c'est ce chemin qui remplace la balise :
 ./bin/miniai -c '#@ formate le fichier /tmp/dede.txt en json et écris le résultat dans /tmp/result.json @#'
 # → /tmp/miniai-1000/20260830-161859_d80a29.py
 ```
+
+En mode `-c`/REPL (résolution à l'Entrée), le script est écrit **et
+exécuté** directement, sans confirmation — son contenu n'est jamais
+affiché avant coup puisque seul son chemin apparaît dans la ligne. Via
+`Ctrl-G` en revanche (REPL ou console normale), le script complet est
+affiché avant écriture/exécution et une confirmation est demandée (voir
+sections 6 et 7) — c'est le moyen le plus sûr de relire ce qui va
+tourner avant de valider.
 
 Testé en réel — ça marche, avec les mêmes limites de fiabilité que le
 reste sur ce modèle 1.5B (le nom de fichier exact ou la structure des
@@ -251,12 +269,16 @@ Le rôle précis de chaque fichier :
   - `FEW_SHOT` — le gabarit de prompt (exemples + `{prefix}`/`█`/`{suffix}`),
     y compris l'exemple qui enseigne l'escalade vers un script (réponse
     commençant par un shebang).
-  - `MiniLLM.generate_bash(request, prefix, suffix)` — charge le modèle
-    au premier appel (lazy), construit le prompt, appelle
-    `llama_cpp.Llama(...)`. Si la réponse commence par `#!`, l'écrit via
-    `_write_script()` dans `SCRIPT_DIR` (`/tmp/miniai-<uid>/`) et renvoie
-    son chemin ; sinon ne garde que la première ligne comme fragment.
-    Journalise systématiquement le résultat via `history.log_event()`.
+  - `MiniLLM.generate_bash(request, prefix, suffix, confirm=None)` —
+    charge le modèle au premier appel (lazy), construit le prompt, appelle
+    `llama_cpp.Llama(...)`. Détermine le texte à afficher/utiliser (script
+    entier si la réponse commence par `#!`, sinon sa première ligne). Si
+    `confirm` est fourni, l'appelle avec ce texte ; un retour faux lève
+    `ResolutionCancelled` (rien n'est écrit ni journalisé). Sinon, écrit le
+    script via `_write_script()` dans `SCRIPT_DIR` (`/tmp/miniai-<uid>/`)
+    et journalise le résultat via `history.log_event()`.
+  - `ResolutionCancelled` — exception levée quand `confirm` refuse ;
+    attrapée par `cli.py`/`inline.py` pour laisser la ligne inchangée.
 - **`src/miniai/history.py`** — `log_event(...)` ajoute une ligne JSON à
   `~/.miniai/history.jsonl` (ou `MINIAI_HISTORY_PATH`) ; `read_events(limit)`
   relit les dernières entrées, utilisé par `cli.py --history`.
@@ -267,13 +289,21 @@ Le rôle précis de chaque fichier :
   retour. C'est ce qui permet à `cd`, aux variables d'environnement, etc.
   de persister d'une ligne à l'autre.
 - **`src/miniai/cli.py`** — assemble tout : `build_parser()` (argparse,
-  option `-c`), `repl()` (boucle `prompt_toolkit` + `PersistentShell`),
-  `run_once()` (mode `-c`), `build_key_bindings()` (branche `Ctrl-G` sur
-  `resolve_pending_tag`).
+  option `-c`/`--history`), `repl()` (boucle `prompt_toolkit` +
+  `PersistentShell`), `run_once()` (mode `-c`, sans confirmation),
+  `build_key_bindings()` (branche `Ctrl-G` sur `resolve_pending_tag`, avec
+  un `confirm` qui affiche le résultat via `ask_confirm()` — passé par
+  `event.app.run_in_terminal()` pour ne pas casser l'affichage
+  `prompt_toolkit` pendant l'`input()`). `ResolutionCancelled` y est
+  attrapée pour laisser le buffer inchangé si l'utilisateur refuse.
 - **`src/miniai/inline.py`** — variante non-interactive de la résolution
   `Ctrl-G` : reçoit `(ligne, position_curseur)` en arguments, appelle
-  `resolve_pending_tag`, imprime la nouvelle ligne puis la nouvelle
-  position sur deux lignes de stdout (lu par `shell-integration/miniai.bash`).
+  `resolve_pending_tag` avec un `confirm` (`ask_confirm()`) qui écrit sur
+  **stderr** et lit `sys.stdin` directement (pas `input()`, dont le
+  prompt partirait sur stdout et polluerait la capture `$(...)` du script
+  bash). Imprime la nouvelle ligne puis la nouvelle position sur deux
+  lignes de stdout (lues par `shell-integration/miniai.bash`) ; si
+  `ResolutionCancelled` est levée, réimprime la ligne/position d'origine.
 
 ## 10. Configuration
 

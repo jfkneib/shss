@@ -4,7 +4,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import miniai.llm as llm_module
-from miniai.llm import discover_gguf_path
+from miniai.llm import ResolutionCancelled, discover_gguf_path
 
 
 def test_discover_gguf_path_env_override(monkeypatch):
@@ -73,3 +73,31 @@ def test_generate_bash_logs_to_history(monkeypatch, tmp_path):
     assert events[0]["request"] == "trie par taille"
     assert events[0]["result"] == "-S"
     assert events[0]["kind"] == "inline"
+
+
+def test_generate_bash_confirm_sees_the_final_display_text(monkeypatch, tmp_path):
+    llm = _fake_miniai(monkeypatch, tmp_path, "-la\n\nLigne: du bruit en trop")
+    seen = {}
+
+    def confirm(text):
+        seen["text"] = text
+        return True
+
+    result = llm.generate_bash("affiche aussi les fichiers caches", confirm=confirm)
+    assert seen["text"] == "-la"
+    assert result == "-la"
+
+
+def test_generate_bash_confirm_false_cancels_without_side_effects(monkeypatch, tmp_path):
+    from miniai.history import read_events
+
+    llm = _fake_miniai(monkeypatch, tmp_path, "#!/usr/bin/env python3\nprint('hi')")
+
+    try:
+        llm.generate_bash("fait un truc", confirm=lambda text: False)
+        assert False, "devrait lever ResolutionCancelled"
+    except ResolutionCancelled:
+        pass
+
+    assert read_events() == []
+    assert not (tmp_path / "scripts").exists()

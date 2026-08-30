@@ -111,6 +111,10 @@ def discover_gguf_path(model=MODEL_NAME, tag=MODEL_TAG):
     )
 
 
+class ResolutionCancelled(Exception):
+    """Raised when a `confirm` callback declines a generated result."""
+
+
 def _script_extension(shebang_line: str) -> str:
     for keyword, ext in _SHEBANG_EXTENSIONS:
         if keyword in shebang_line:
@@ -146,7 +150,19 @@ class MiniLLM:
                 verbose=False,
             )
 
-    def generate_bash(self, request: str, prefix: str = "", suffix: str = "") -> str:
+    def generate_bash(
+        self, request: str, prefix: str = "", suffix: str = "", confirm=None
+    ) -> str:
+        """Generate a bash fragment or script for `request`.
+
+        If `confirm` is given, it's called with the text that would be
+        used (the one-line fragment, or the full script source) before
+        anything is written or logged; returning a falsy value raises
+        ResolutionCancelled and leaves no trace (no file, no history
+        entry). Used to let the caller show a "utiliser ce résultat ?"
+        prompt for Ctrl-G, without slowing down the plain Enter-driven
+        resolution path (which never passes `confirm`).
+        """
         self._ensure_loaded()
         request = request.strip()
         prompt = FEW_SHOT.format(request=request, prefix=prefix, suffix=suffix)
@@ -159,13 +175,18 @@ class MiniLLM:
         text = out["choices"][0]["text"].strip()
 
         if text.startswith("#!"):
-            result = _write_script(text)
             kind = "script"
+            display = text
         else:
             # Pas un script : un seul fragment sur une ligne, on ignore
             # tout ce que le modèle aurait pu générer en trop après.
-            result = text.split("\n", 1)[0].strip()
             kind = "inline"
+            display = text.split("\n", 1)[0].strip()
+
+        if confirm is not None and not confirm(display):
+            raise ResolutionCancelled()
+
+        result = _write_script(text) if kind == "script" else display
 
         log_event(request, prefix, suffix, result, kind)
         return result

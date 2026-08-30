@@ -2,9 +2,16 @@ import argparse
 import sys
 
 from . import __version__
-from .llm import MiniLLM
+from .llm import MiniLLM, ResolutionCancelled
 from .shell import PersistentShell
 from .tags import expand_line, resolve_pending_tag
+
+
+def ask_confirm(text: str) -> bool:
+    """Show what miniai would insert/run and ask for a yes/no."""
+    print(f"\nminiai propose :\n{text}\n")
+    reply = input("Utiliser ce résultat ? [O/n] ").strip().lower()
+    return reply in ("", "o", "oui", "y", "yes")
 
 
 def build_key_bindings(llm: MiniLLM):
@@ -12,17 +19,28 @@ def build_key_bindings(llm: MiniLLM):
 
     kb = KeyBindings()
 
-    def resolver(request: str, prefix: str, suffix: str) -> str:
-        try:
-            return llm.generate_bash(request, prefix, suffix)
-        except Exception as exc:  # pragma: no cover - interactive feedback only
-            return f"<miniai llm error: {exc}>"
-
     @kb.add("c-g")
     def _(event):
         """Resolve the #@ ... currently being typed, without waiting for @# + Enter."""
         buf = event.app.current_buffer
-        new_text, new_point = resolve_pending_tag(buf.text, buf.cursor_position, resolver)
+
+        def resolver(request: str, prefix: str, suffix: str) -> str:
+            def confirm(text: str) -> bool:
+                answer = {}
+                event.app.run_in_terminal(lambda: answer.setdefault("ok", ask_confirm(text)))
+                return answer.get("ok", False)
+
+            try:
+                return llm.generate_bash(request, prefix, suffix, confirm=confirm)
+            except ResolutionCancelled:
+                raise
+            except Exception as exc:  # pragma: no cover - interactive feedback only
+                return f"<miniai llm error: {exc}>"
+
+        try:
+            new_text, new_point = resolve_pending_tag(buf.text, buf.cursor_position, resolver)
+        except ResolutionCancelled:
+            return
         buf.text = new_text
         buf.cursor_position = new_point
 
