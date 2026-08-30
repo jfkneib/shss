@@ -60,6 +60,28 @@ Pour pointer vers un autre fichier `.gguf` :
 export MINIAI_MODEL_PATH=/chemin/vers/modele.gguf
 ```
 
+## Limites connues
+
+`qwen2.5-coder:1.5b-base` est un petit modèle base avec un prompt few-shot
+minimal (voir `src/miniai/llm.py`) — il ne comprend pas toujours toute la
+demande, surtout si elle **combine plusieurs critères**. Exemple observé :
+
+```bash
+ls #@ affiche les fichiers textes classer par taille @#
+# → ls -S   (le tri est pris en compte, le filtre "fichiers textes" est ignoré)
+```
+
+Testé aussi avec un exemple few-shot dédié à ce cas précis (filtre +
+tri) : aucune amélioration, même sur une demande presque identique à
+l'exemple. Ce n'est donc pas un problème d'exemples manquants mais une
+limite de capacité du modèle 1.5B sur ce type de raisonnement composé —
+un modèle plus gros (3B/7B) serait nécessaire pour fiabiliser ce genre de
+demande, au prix d'une latence plus élevée.
+
+Le mécanisme lui-même (détection des balises, injection en place,
+exécution) fonctionne correctement dans tous les cas testés — c'est la
+qualité de la génération qui varie selon la complexité de la demande.
+
 ## Structure du dépôt
 
 ```text
