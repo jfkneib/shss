@@ -135,9 +135,10 @@ derrière le REPL).
 
 ### Raccourci Ctrl-G
 
-En cours de frappe, après avoir tapé `#@ ta demande` (sans `@#` fermant),
-`Ctrl-G` déclenche la résolution immédiatement et insère le résultat dans
-la ligne — pratique pour voir/corriger avant de valider avec Entrée.
+`Ctrl-G` résout la balise la plus proche du curseur — que tu l'aies fermée
+par `@#` ou pas — et insère le résultat dans la ligne, sans attendre
+Entrée. Marche aussi bien avec `#@ ta demande` (non fermée) qu'avec
+`#@ ta demande @#` (fermée).
 
 ## 7. Intégration dans ta console bash normale (sans lancer ./bin/miniai)
 
@@ -159,9 +160,12 @@ prompt bash normal :
 jfk@jfk-XPS-8940 ~ $ ls #@ trie par taille
 ```
 
-Tape `Ctrl-G` (pas besoin de taper `@#`, ni d'appuyer sur Entrée) : la
+Tape `Ctrl-G` (pas besoin de fermer par `@#`, ni d'appuyer sur Entrée) : la
 ligne devient immédiatement `ls -S`, modifiable avant de valider avec
-Entrée comme n'importe quelle commande bash normale.
+Entrée comme n'importe quelle commande bash normale. Si tu préfères fermer
+la balise toi-même (`ls #@ trie par taille @#`) avant de faire `Ctrl-G`,
+ça marche aussi — dans les deux cas c'est `Ctrl-G` qui déclenche la
+résolution, jamais Entrée seul.
 
 **Piège à connaître** : si tu tapes la balise complète `#@ ... @#` et
 appuies directement sur Entrée **sans** passer par Ctrl-G, bash traite

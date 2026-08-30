@@ -60,10 +60,20 @@ def test_resolve_pending_tag_open_tag_at_cursor():
     assert new_point == len(new_line)
 
 
-def test_resolve_pending_tag_already_closed_tag_is_ignored():
+def test_resolve_pending_tag_already_closed_tag_at_cursor_is_resolved():
+    line = "ls #@ trie par taille @#"
+    point = len(line)
+    new_line, new_point = resolve_pending_tag(line, point, _upper_resolver)
+    assert new_line == "ls TRIE PAR TAILLE"
+    assert new_point == len(new_line)
+
+
+def test_resolve_pending_tag_closed_tag_with_cursor_further_right():
     line = "ls #@ trie par taille @# -a"
     point = len(line)
-    assert resolve_pending_tag(line, point, _upper_resolver) == (line, point)
+    new_line, new_point = resolve_pending_tag(line, point, _upper_resolver)
+    assert new_line == "ls TRIE PAR TAILLE -a"
+    assert new_point == len(new_line)
 
 
 def test_resolve_pending_tag_keeps_suffix_after_cursor():

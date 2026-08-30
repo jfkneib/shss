@@ -19,22 +19,35 @@ def expand_line(line: str, resolver) -> str:
 
 
 def resolve_pending_tag(line: str, point: int, resolver):
-    """Find the last '#@' before `point` that isn't closed yet by '@#',
-    and resolve it via resolver(request, prefix, suffix) — used to react
-    to a keypress while the tag is still being typed, before Enter.
+    """Resolve the tag closest to `point`, whether it's still being typed
+    (no closing '@#' yet) or already fully closed — used to react to a
+    keypress (Ctrl-G) at any moment while editing the line, before Enter.
 
-    Returns (new_line, new_point). If there is no pending tag before
-    `point`, returns (line, point) unchanged.
+    Returns (new_line, new_point). If there is nothing to resolve at or
+    before `point`, returns (line, point) unchanged.
     """
     before = line[:point]
     after = line[point:]
 
     idx = before.rfind("#@")
-    if idx == -1 or "@#" in before[idx:]:
+    if idx != -1 and "@#" not in before[idx:]:
+        request = before[idx + 2 :].strip()
+        prefix = before[:idx]
+        fragment = resolver(request, prefix, after)
+        new_line = prefix + fragment + after
+        return new_line, len(prefix) + len(fragment)
+
+    last_match = None
+    for m in TAG_RE.finditer(line):
+        if m.end() <= point:
+            last_match = m
+
+    if last_match is None:
         return line, point
 
-    request = before[idx + 2 :].strip()
-    prefix = before[:idx]
-    fragment = resolver(request, prefix, after)
-    new_line = prefix + fragment + after
-    return new_line, len(prefix) + len(fragment)
+    prefix = line[: last_match.start()]
+    suffix = line[last_match.end() :]
+    fragment = resolver(last_match.group(1), prefix, suffix)
+    new_line = prefix + fragment + suffix
+    new_point = len(prefix) + len(fragment) + (point - last_match.end())
+    return new_line, new_point

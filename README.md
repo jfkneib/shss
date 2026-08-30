@@ -30,8 +30,9 @@ Mode one-shot (comme `bash -c`) :
 ./bin/miniai -c 'ls #@ affiche aussi les fichiers caches @#'
 ```
 
-Dans le REPL, `Ctrl-G` résout immédiatement le `#@ ...` en cours de frappe
-(sans attendre `@#` puis Entrée) et l'insère dans la ligne.
+Dans le REPL, `Ctrl-G` résout immédiatement la balise la plus proche du
+curseur — qu'elle soit déjà fermée par `@#` ou encore en cours de frappe —
+sans attendre Entrée.
 
 ### Intégration dans ta console bash normale (sans ./bin/miniai)
 
