@@ -1,0 +1,106 @@
+.TH MINIAI 1 "2026-08-30" "miniai 0.1.0" "Commandes utilisateur"
+.SH NOM
+miniai \- console bash augmentée par un petit LLM local, via des balises #@ ... @#
+.SH SYNOPSIS
+.B miniai
+[\fB\-c\fR \fICOMMANDE\fR]
+.br
+.B miniai
+\fB\-\-version\fR
+.SH DESCRIPTION
+.B miniai
+résout, dans une ligne de bash, tout bloc
+.BR "#@ demande en langage naturel @#"
+en l'envoyant à un petit LLM local (\fBqwen2.5\-coder:1.5b\-base\fR,
+format GGUF, chargé directement via \fBllama\-cpp\-python\fR — aucun
+serveur ni démon Ollama n'est utilisé à l'exécution). Le fragment de bash
+renvoyé par le modèle remplace la balise exactement à sa place dans la
+ligne ; le reste de la ligne est du bash normal. La ligne complète
+s'exécute ensuite dans une session bash persistante : \fBcd\fR, variables
+d'environnement, etc. sont conservés d'un appel à l'autre.
+.PP
+Sans argument, \fBminiai\fR lance une console interactive (REPL). Avec
+\fB\-c\fR, une seule ligne est résolue puis exécutée, comme \fBbash \-c\fR.
+.PP
+Plusieurs balises peuvent apparaître sur une même ligne, mélangées à du
+bash classique :
+.PP
+.RS
+ls #@ 1ère demande @#  #@ 2ème demande @#
+.RE
+.SH OPTIONS
+.TP
+.BR \-c " " \fICOMMANDE\fR
+Résout et exécute \fICOMMANDE\fR une seule fois, puis quitte, au lieu de
+lancer le REPL.
+.TP
+.B \-\-version
+Affiche la version de miniai et quitte.
+.SH RACCOURCI CTRL\-G
+Dans le REPL, \fBCtrl\-G\fR résout immédiatement la balise la plus proche
+du curseur — fermée par \fB@#\fR ou encore en cours de frappe — sans
+attendre Entrée.
+.PP
+Ce même raccourci peut être branché directement dans une console bash
+normale (sans lancer \fBmini\fR), en ajoutant à son \fB~/.bashrc\fR :
+.PP
+.RS
+source /opt/miniai/shell\-integration/miniai.bash
+.RE
+.PP
+.B Attention :
+si la balise complète \fB#@ ... @#\fR est tapée puis validée par Entrée
+\fBsans\fR passer par \fBCtrl\-G\fR d'abord, bash traite tout ce qui suit
+\fB#@\fR comme un commentaire (le \fB#\fR est précédé d'un espace) — la
+partie LLM est alors silencieusement ignorée, sans erreur. Il faut
+toujours résoudre avec \fBCtrl\-G\fR avant de valider.
+.SH VARIABLES D'ENVIRONNEMENT
+.TP
+.B MINIAI_MODEL_PATH
+Force le chemin exact du fichier \fB.gguf\fR à utiliser, court\-circuite
+toute recherche automatique.
+.TP
+.B MINIAI_MODEL_NAME
+Nom du modèle Ollama à chercher si \fBMINIAI_MODEL_PATH\fR n'est pas
+défini. Par défaut : \fBqwen2.5\-coder\fR.
+.TP
+.B MINIAI_MODEL_TAG
+Tag du modèle Ollama à chercher. Par défaut : \fB1.5b\-base\fR.
+.TP
+.B OLLAMA_MODELS
+Dossier où Ollama range ses modèles, utilisé par la recherche
+automatique si présent.
+.SH FICHIERS
+.TP
+.I /opt/miniai/
+Installation de miniai (code source Python, environnement virtuel,
+modèle, intégration shell).
+.TP
+.I /opt/miniai/model/model.gguf
+Modèle GGUF utilisé par défaut si aucune des variables ci\-dessus ne
+donne de résultat (réutilisé depuis Ollama si présent lors de
+l'installation du paquet, sinon téléchargé depuis Hugging Face).
+.TP
+.I /opt/miniai/shell\-integration/miniai.bash
+Script à sourcer dans \fB~/.bashrc\fR pour le raccourci \fBCtrl\-G\fR
+dans une console bash normale.
+.SH EXEMPLES
+.PP
+.RS
+miniai \-c 'ls #@ trie par taille @#'
+.RE
+.PP
+.RS
+miniai \-c '#@ affiche la date du jour @#'
+.RE
+.SH LIMITES CONNUES
+Le modèle utilisé (1.5 milliard de paramètres, base, prompt few\-shot
+minimal) peut mal traiter les demandes combinant plusieurs critères
+(ex: filtrer par type de fichier \fIet\fR trier). Le mécanisme de
+balises/exécution fonctionne dans tous les cas ; c'est la qualité de la
+génération qui varie selon la complexité de la demande.
+.SH VOIR AUSSI
+Documentation complète et architecture du code :
+.I /opt/miniai/README.md
+et
+.IR /opt/miniai/docs/getting\-started.md .

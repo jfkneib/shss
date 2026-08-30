@@ -1,0 +1,18 @@
+#!/bin/sh
+set -e
+
+MINIAI_ROOT=/opt/miniai
+
+case "$1" in
+    remove)
+        rm -rf "$MINIAI_ROOT/.venv"
+        ;;
+    purge)
+        rm -rf "$MINIAI_ROOT/.venv" "$MINIAI_ROOT/model"
+        echo "miniai: la ligne 'source $MINIAI_ROOT/shell-integration/miniai.bash'"
+        echo "miniai: ajoutee a un ~/.bashrc n'est pas retiree automatiquement."
+        echo "miniai: supprime-la a la main si besoin."
+        ;;
+esac
+
+exit 0

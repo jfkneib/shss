@@ -6,7 +6,30 @@ du bash. Le reste de la ligne est du bash normal, exécuté dans une vraie
 session bash persistante (cd, variables d'environnement, etc. sont
 conservés d'une ligne à l'autre).
 
-## Utilisation
+## Installation via paquet Debian (.deb)
+
+Le plus simple pour un usage courant — installe tout (dépendances Python
+dans un venv dédié, modèle GGUF, intégration `Ctrl-G` dans `~/.bashrc`,
+page de manuel) sans manipulation manuelle :
+
+```bash
+./packaging/build.sh
+sudo apt install ./miniai_0.1.0_all.deb
+```
+
+Le paquet installe dans `/opt/miniai/` (venv Python, modèle, code), les
+commandes `miniai` / `miniai-resolve-inline` dans `/usr/bin/`, et une
+page de manuel (`man miniai`). Il réutilise le modèle déjà présent via
+Ollama s'il le trouve, sinon le télécharge depuis Hugging Face
+(~950 Mo). Il ajoute aussi `source .../shell-integration/miniai.bash` au
+`~/.bashrc` de l'utilisateur qui a lancé `sudo` (variable `$SUDO_USER`) —
+si ce n'est pas détecté, l'ajout manuel de cette ligne est affiché à
+l'écran en fin d'installation.
+
+Détails complets (contenu du paquet, scripts `postinst`/`postrm`,
+suppression) dans [packaging/](packaging/).
+
+## Utilisation (depuis un checkout git, sans paquet)
 
 ```bash
 ./bin/miniai

@@ -12,6 +12,12 @@ _KNOWN_OLLAMA_DIRS = [
     "/media/jfk/Ollama/MODEL_OLLAMA",
 ]
 
+# Emplacement où le paquet Debian (packaging/) installe/télécharge le
+# modèle : ni un dossier Ollama, ni géré par MINIAI_MODEL_PATH, mais un
+# filet de sécurité pour que `miniai` marche tout de suite après `apt
+# install`, sans configuration.
+SYSTEM_MODEL_PATH = "/opt/miniai/model/model.gguf"
+
 FEW_SHOT = """Tu complètes une ligne de commande bash. Le symbole █ marque l'endroit à remplir.
 Réponds uniquement par le texte qui remplace █, sur une seule ligne, sans explication.
 
@@ -60,6 +66,9 @@ def discover_gguf_path(model=MODEL_NAME, tag=MODEL_TAG):
                 blob_path = Path(models_dir) / "blobs" / digest
                 if blob_path.is_file():
                     return str(blob_path)
+
+    if Path(SYSTEM_MODEL_PATH).is_file():
+        return SYSTEM_MODEL_PATH
 
     raise FileNotFoundError(
         f"GGUF introuvable pour {model}:{tag}. "

@@ -1,0 +1,71 @@
+#!/bin/sh
+set -e
+
+MINIAI_ROOT=/opt/miniai
+MODEL_URL="https://huggingface.co/QuantFactory/Qwen2.5-Coder-1.5B-GGUF/resolve/main/Qwen2.5-Coder-1.5B.Q4_K_M.gguf"
+
+case "$1" in
+    configure)
+        echo "miniai: creation de l'environnement virtuel Python..."
+        if [ ! -x "$MINIAI_ROOT/.venv/bin/python" ]; then
+            python3 -m venv "$MINIAI_ROOT/.venv"
+        fi
+        "$MINIAI_ROOT/.venv/bin/pip" install --quiet --upgrade pip
+        "$MINIAI_ROOT/.venv/bin/pip" install --quiet -r "$MINIAI_ROOT/requirements.txt"
+
+        mkdir -p "$MINIAI_ROOT/model"
+        if [ ! -e "$MINIAI_ROOT/model/model.gguf" ]; then
+            FOUND=$(PYTHONPATH="$MINIAI_ROOT/src" "$MINIAI_ROOT/.venv/bin/python" -c '
+from miniai.llm import discover_gguf_path
+try:
+    print(discover_gguf_path())
+except FileNotFoundError:
+    pass
+' 2>/dev/null || true)
+
+            if [ -n "$FOUND" ]; then
+                echo "miniai: modele deja present, reutilise depuis $FOUND"
+                ln -sf "$FOUND" "$MINIAI_ROOT/model/model.gguf"
+            else
+                echo "miniai: telechargement du modele qwen2.5-coder-1.5b-base (~950 Mo)..."
+                if command -v curl >/dev/null 2>&1; then
+                    curl -fL --progress-bar -o "$MINIAI_ROOT/model/model.gguf.part" "$MODEL_URL"
+                else
+                    wget -O "$MINIAI_ROOT/model/model.gguf.part" "$MODEL_URL"
+                fi
+                mv "$MINIAI_ROOT/model/model.gguf.part" "$MINIAI_ROOT/model/model.gguf"
+            fi
+        else
+            echo "miniai: modele deja installe ($MINIAI_ROOT/model/model.gguf), rien a faire"
+        fi
+
+        find "$MINIAI_ROOT" -type d -exec chmod go+rx {} +
+        find "$MINIAI_ROOT" -type f -exec chmod go+r {} +
+
+        TARGET_USER="${SUDO_USER:-}"
+        if [ -z "$TARGET_USER" ] && [ "$(id -u)" != "0" ]; then
+            TARGET_USER="$(id -un)"
+        fi
+
+        LINE="source $MINIAI_ROOT/shell-integration/miniai.bash"
+        if [ -n "$TARGET_USER" ]; then
+            TARGET_HOME=$(getent passwd "$TARGET_USER" | cut -d: -f6)
+            BASHRC="$TARGET_HOME/.bashrc"
+            if [ -f "$BASHRC" ] && ! grep -qF "$LINE" "$BASHRC"; then
+                printf '\n# miniai: Ctrl-G resout les blocs #@ ... @# dans le prompt\n%s\n' "$LINE" >> "$BASHRC"
+                chown "$TARGET_USER" "$BASHRC" 2>/dev/null || true
+                echo "miniai: integration Ctrl-G ajoutee a $BASHRC"
+                echo "miniai: ouvre un nouveau terminal (ou lance: source $BASHRC)"
+            else
+                echo "miniai: integration Ctrl-G deja presente dans $BASHRC"
+            fi
+        else
+            echo "miniai: ajoute manuellement cette ligne a ton ~/.bashrc :"
+            echo "  $LINE"
+        fi
+
+        echo "miniai: installation terminee. Essaie : miniai -c 'ls #@ trie par taille @#'"
+        ;;
+esac
+
+exit 0
