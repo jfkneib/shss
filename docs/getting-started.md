@@ -171,29 +171,25 @@ jfk@jfk-XPS-8940 ~ $ ls #@ trie par taille
 ```
 
 Tape `Ctrl-G` (pas besoin de fermer par `@#`, ni d'appuyer sur Entrée) :
-miniai affiche `-S` et demande `Utiliser ce résultat ? [O/n]` — valide
-avec Entrée (ou `o`) pour accepter, la ligne devient alors `ls -S`,
-modifiable avant de l'exécuter comme n'importe quelle commande bash
-normale. Tape `n` pour refuser : la ligne reste inchangée, tu peux
-reformuler ta demande et refaire `Ctrl-G`. Si tu préfères fermer la
-balise toi-même (`ls #@ trie par taille @#`) avant de faire `Ctrl-G`, ça
-marche aussi — dans les deux cas c'est `Ctrl-G` qui déclenche la
-résolution, jamais Entrée seul.
+miniai affiche ce qu'il a généré (`-S`), puis l'applique directement — la
+ligne devient `ls -S`, modifiable avant de l'exécuter comme n'importe
+quelle commande bash normale. Si tu préfères fermer la balise toi-même
+(`ls #@ trie par taille @#`) avant de faire `Ctrl-G`, ça marche aussi —
+dans les deux cas c'est `Ctrl-G` qui déclenche la résolution, jamais
+Entrée seul.
 
-**Différence avec le REPL** : ici, la question `Utiliser ce résultat ?`
-est posée par `read` (bash lui-même), pas par le script Python. Lire une
-réponse interactive *depuis le sous-processus Python* appelé par
-`bind -x` ne marche pas de façon fiable — le terminal reste dans le mode
-raw/non-canonique de readline pendant l'exécution de la fonction, donc
-`input()` côté Python ne voit ni l'écho ni la touche Entrée correctement
-(symptôme observé : le prompt `Utiliser ce résultat ? [O/n]` s'affiche
-mais taper quoi que ce soit ne fait rien). `bin/miniai-resolve-inline`
-génère donc le résultat, l'écrit sur disque et le journalise **avant**
-d'afficher quoi que ce soit ; c'est ensuite `shell-integration/miniai.bash`
-qui pose la question avec `read` et décide seulement si le résultat est
-**inséré dans la ligne**. Répondre non n'efface donc pas le script déjà
-écrit dans `/tmp/miniai-<uid>/`, ça empêche juste son chemin d'apparaître
-dans ton prompt.
+**Pas de confirmation Oui/non ici**, contrairement au REPL (section 6).
+Une première version en demandait une (comme dans le REPL), mais lire une
+réponse au clavier *depuis le sous-processus Python* appelé par
+`bind -x`, ou même directement via `read ... < /dev/tty` dans la fonction
+bash elle-même, s'est avéré peu fiable — testé et confirmé en conditions
+réelles (terminal Terminator) : même un `read` totalement indépendant de
+miniai ne recevait aucune touche tant que la fonction tournait (seul
+Ctrl-C débloquait). C'est un piège documenté de bash (`bind -x` + `read`
+interactif), pas un bug miniai, et rien ne garantit qu'il ne se
+reproduirait pas ailleurs — donc pas de confirmation bloquante ici. La
+ligne éditable avant Entrée sert de vérification, comme avant l'ajout de
+ce mécanisme.
 
 **Piège à connaître** : si tu tapes la balise complète `#@ ... @#` et
 appuies directement sur Entrée **sans** passer par Ctrl-G, bash traite
@@ -333,22 +329,23 @@ Le rôle précis de chaque fichier :
   d'écrire le script ou d'appeler `history.log_event()`.
 - **`src/miniai/inline.py`** — variante non-interactive de la résolution
   `Ctrl-G`, utilisée par `bin/miniai-resolve-inline` (appelé depuis
-  `shell-integration/miniai.bash`). Ne fait **pas** de confirmation
-  elle-même : lire une réponse interactive depuis ce sous-processus
-  Python ne marche pas de façon fiable sous `bind -x` (le terminal reste
-  dans le mode raw/non-canonique de readline pendant l'exécution de la
-  fonction bash, donc `input()`/`sys.stdin.readline()` côté Python ne
-  voient pas correctement l'écho ni la touche Entrée). À la place, elle
-  passe un `confirm` qui se contente de mémoriser le texte généré
-  (`display_holder`) et toujours répondre vrai — la génération se termine
-  donc normalement (script écrit, historique journalisé). Elle imprime
-  trois choses sur stdout : la nouvelle ligne, la nouvelle position, puis
-  le texte à afficher (vide si aucune balise n'a été résolue, sur
-  plusieurs lignes pour un script). C'est `shell-integration/miniai.bash`
-  qui lit ces trois parties (`sed`/`tail`), pose la vraie question via le
-  `read` intégré de bash (fiable dans ce contexte, contrairement à
-  l'entrée lue depuis Python), et n'applique `READLINE_LINE`/`READLINE_POINT`
-  que si la réponse est positive.
+  `shell-integration/miniai.bash`). Ne demande **jamais** de confirmation
+  elle-même — son `confirm` interne (`record_display`) se contente de
+  mémoriser le texte généré et répond toujours vrai, donc la génération
+  se termine normalement (script écrit, historique journalisé) sans
+  jamais bloquer sur une entrée clavier. Elle imprime trois choses sur
+  stdout : la nouvelle ligne, la nouvelle position, puis le texte généré
+  à afficher (vide si aucune balise n'a été résolue, sur plusieurs lignes
+  pour un script). `shell-integration/miniai.bash` lit ces trois parties
+  (`sed`/`tail`), affiche la troisième à titre informatif si non vide, et
+  applique `READLINE_LINE`/`READLINE_POINT` directement — sans demander
+  Oui/non (contrairement au REPL). Une version antérieure demandait une
+  confirmation ici aussi, via le `read` intégré de bash ; retirée après
+  avoir confirmé en conditions réelles qu'un `read` interactif — même
+  minimal, sans rapport avec miniai, même lu depuis `/dev/tty` — ne
+  recevait aucune touche pendant qu'une fonction `bind -x` tournait (sauf
+  Ctrl-C). Piège documenté de bash, pas un bug miniai, mais pas assez
+  fiable pour en dépendre.
 
 ## 10. Configuration
 

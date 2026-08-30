@@ -82,16 +82,16 @@ habituelle (pas besoin de lancer `./bin/miniai`) :
 echo 'source /home/jfk/git/dev/miniai/shell-integration/miniai.bash' >> ~/.bashrc
 ```
 
-La confirmation `Ctrl-G` fonctionne aussi ici, mais différemment du REPL :
-comme lire une réponse interactive depuis le sous-processus Python
-appelé par `bind -x` n'est pas fiable dans ce contexte (le terminal reste
-dans le mode raw de readline — voir `shell-integration/miniai.bash`), la
-génération se termine et s'enregistre (script écrit, historique
-journalisé) **avant** que la confirmation soit demandée ; c'est la
-confirmation elle-même, faite par le `read` intégré de bash, qui décide
-seulement si le résultat est **inséré dans ta ligne**. Répondre non ne
-supprime donc pas le script déjà écrit dans `/tmp/miniai-<uid>/`, il
-empêche juste son chemin d'atterrir dans ton prompt.
+Contrairement au REPL, il n'y a **pas** de confirmation Oui/non ici :
+lire une réponse au clavier depuis une fonction `bind -x` s'est avéré peu
+fiable — testé et confirmé sur un vrai poste (terminal Terminator) :
+même un `read` minimal, sans rapport avec miniai, ne recevait aucune
+touche (piège connu de bash, pas un bug miniai — voir
+`shell-integration/miniai.bash` pour le détail). `Ctrl-G` affiche donc ce
+qui a été généré (utile surtout en mode script, où la ligne ne montre
+qu'un chemin de fichier) puis l'applique **directement** — la ligne reste
+éditable avant Entrée, comme n'importe quelle commande bash, ce qui sert
+de vérification.
 
 Détails, limites et piège à connaître (bash traite `#@ ... @#` comme un
 commentaire si on presse Entrée sans passer par `Ctrl-G` d'abord) dans

@@ -74,14 +74,14 @@ normale (sans lancer \fBminiai\fR), en ajoutant à son \fB~/.bashrc\fR :
 source /opt/miniai/shell\-integration/miniai.bash
 .RE
 .PP
-Ici, contrairement au REPL, la confirmation est posée par le \fBread\fR
-intégré de bash (dans \fBshell\-integration/miniai.bash\fR), pas par
-\fBminiai\-resolve\-inline\fR lui\-même : lire une réponse interactive
-depuis ce sous\-processus Python n'est pas fiable sous \fBbind \-x\fR (le
-terminal reste dans le mode raw de readline). La génération se termine
-donc et s'enregistre (script écrit, historique journalisé) avant que la
-question soit posée ; répondre non n'efface pas ce qui a été écrit, ça
-empêche seulement le résultat d'être inséré dans la ligne.
+Ici, contrairement au REPL, \fBil n'y a pas de confirmation Oui/non\fR :
+lire une réponse au clavier depuis une fonction \fBbind \-x\fR s'est
+avéré peu fiable en conditions réelles (même un \fBread\fR minimal, sans
+rapport avec miniai, ne recevait aucune touche pendant l'exécution de la
+fonction — piège documenté de bash, pas un bug miniai). \fBCtrl\-G\fR
+affiche donc ce qui a été généré (utile en mode script, où la ligne ne
+montre qu'un chemin de fichier) puis l'applique directement ; la ligne
+reste éditable avant Entrée, ce qui sert de vérification.
 .PP
 .B Attention :
 si la balise complète \fB#@ ... @#\fR est tapée puis validée par Entrée
