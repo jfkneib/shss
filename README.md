@@ -67,7 +67,8 @@ Utiliser ce résultat ? [O/n]
 ```
 
 Répondre non (`n`) laisse la ligne inchangée, comme si `Ctrl-G` n'avait
-pas été pressé. Cette confirmation n'existe que pour `Ctrl-G` — la
+pas été pressé — dans le REPL, rien n'est écrit ni journalisé tant que
+tu n'as pas confirmé. Cette confirmation n'existe que pour `Ctrl-G` — la
 résolution automatique d'une balise déjà fermée à l'Entrée (REPL ou `-c`)
 reste directe, sans prompt, pour ne pas casser des usages non
 interactifs.
@@ -80,6 +81,17 @@ habituelle (pas besoin de lancer `./bin/miniai`) :
 ```bash
 echo 'source /home/jfk/git/dev/miniai/shell-integration/miniai.bash' >> ~/.bashrc
 ```
+
+La confirmation `Ctrl-G` fonctionne aussi ici, mais différemment du REPL :
+comme lire une réponse interactive depuis le sous-processus Python
+appelé par `bind -x` n'est pas fiable dans ce contexte (le terminal reste
+dans le mode raw de readline — voir `shell-integration/miniai.bash`), la
+génération se termine et s'enregistre (script écrit, historique
+journalisé) **avant** que la confirmation soit demandée ; c'est la
+confirmation elle-même, faite par le `read` intégré de bash, qui décide
+seulement si le résultat est **inséré dans ta ligne**. Répondre non ne
+supprime donc pas le script déjà écrit dans `/tmp/miniai-<uid>/`, il
+empêche juste son chemin d'atterrir dans ton prompt.
 
 Détails, limites et piège à connaître (bash traite `#@ ... @#` comme un
 commentaire si on presse Entrée sans passer par `Ctrl-G` d'abord) dans

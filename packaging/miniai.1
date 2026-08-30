@@ -63,15 +63,25 @@ du curseur — fermée par \fB@#\fR ou encore en cours de frappe — sans
 attendre Entrée. Avant d'appliquer le résultat, il l'affiche (le
 fragment, ou le script entier en mode script) et demande confirmation
 (\fButiliser ce résultat ? [O/n]\fR) ; répondre non laisse la ligne
-inchangée. Cette confirmation n'existe que pour \fBCtrl\-G\fR — la
-résolution automatique d'une balise fermée à l'Entrée reste directe.
+inchangée et rien n'a encore été écrit ni journalisé. Cette confirmation
+n'existe que pour \fBCtrl\-G\fR — la résolution automatique d'une balise
+fermée à l'Entrée reste directe.
 .PP
 Ce même raccourci peut être branché directement dans une console bash
-normale (sans lancer \fBmini\fR), en ajoutant à son \fB~/.bashrc\fR :
+normale (sans lancer \fBminiai\fR), en ajoutant à son \fB~/.bashrc\fR :
 .PP
 .RS
 source /opt/miniai/shell\-integration/miniai.bash
 .RE
+.PP
+Ici, contrairement au REPL, la confirmation est posée par le \fBread\fR
+intégré de bash (dans \fBshell\-integration/miniai.bash\fR), pas par
+\fBminiai\-resolve\-inline\fR lui\-même : lire une réponse interactive
+depuis ce sous\-processus Python n'est pas fiable sous \fBbind \-x\fR (le
+terminal reste dans le mode raw de readline). La génération se termine
+donc et s'enregistre (script écrit, historique journalisé) avant que la
+question soit posée ; répondre non n'efface pas ce qui a été écrit, ça
+empêche seulement le résultat d'être inséré dans la ligne.
 .PP
 .B Attention :
 si la balise complète \fB#@ ... @#\fR est tapée puis validée par Entrée

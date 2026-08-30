@@ -15,30 +15,34 @@ def ask_confirm(text: str) -> bool:
 
 
 def build_key_bindings(llm: MiniLLM):
+    from prompt_toolkit.application import run_in_terminal
     from prompt_toolkit.key_binding import KeyBindings
 
     kb = KeyBindings()
 
     @kb.add("c-g")
-    def _(event):
+    async def _(event):
         """Resolve the #@ ... currently being typed, without waiting for @# + Enter."""
         buf = event.app.current_buffer
 
         def resolver(request: str, prefix: str, suffix: str) -> str:
-            def confirm(text: str) -> bool:
-                answer = {}
-                event.app.run_in_terminal(lambda: answer.setdefault("ok", ask_confirm(text)))
-                return answer.get("ok", False)
-
             try:
-                return llm.generate_bash(request, prefix, suffix, confirm=confirm)
+                return llm.generate_bash(request, prefix, suffix, confirm=ask_confirm)
             except ResolutionCancelled:
                 raise
             except Exception as exc:  # pragma: no cover - interactive feedback only
                 return f"<miniai llm error: {exc}>"
 
+        def do_resolve():
+            return resolve_pending_tag(buf.text, buf.cursor_position, resolver)
+
+        # run_in_terminal hands the real terminal back for the duration of
+        # do_resolve() — needed because ask_confirm() blocks on input(),
+        # which prompt_toolkit's own raw-mode rendering would otherwise
+        # swallow (Application has no run_in_terminal *method*; this is
+        # the standalone async function, awaited from an async handler).
         try:
-            new_text, new_point = resolve_pending_tag(buf.text, buf.cursor_position, resolver)
+            new_text, new_point = await run_in_terminal(do_resolve)
         except ResolutionCancelled:
             return
         buf.text = new_text

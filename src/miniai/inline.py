@@ -1,28 +1,27 @@
-"""One-shot resolver used by the bash `bind -x` integration: given the
-current readline buffer and cursor position, resolve the pending
-`#@ ... ` tag (if any) and print the new line and new cursor position,
-one per line, for the calling bash function to assign back to
-READLINE_LINE / READLINE_POINT.
+"""One-shot resolver used by the bash `bind -x` integration.
+
+Given the current readline buffer and cursor position, resolves the
+pending `#@ ... ` tag (if any) and prints, to stdout:
+
+    <new READLINE_LINE>
+    <new READLINE_POINT>
+    <display text, 0+ lines: what was generated, for the calling bash
+     function to show and confirm before actually applying the two
+     lines above>
+
+The confirmation itself intentionally does NOT happen here: a `bind -x`
+handler runs with the terminal left in whatever raw/non-canonical mode
+bash's readline was using, so reading interactively from this Python
+subprocess's stdin (even by hand, bypassing input()) doesn't reliably
+see keystrokes or their echo. Bash's own `read` builtin, run directly in
+shell-integration/miniai.bash, does not have that problem — so that's
+where the actual "utiliser ce résultat ?" prompt lives.
 """
 
 import sys
 
-from .llm import MiniLLM, ResolutionCancelled
+from .llm import MiniLLM
 from .tags import resolve_pending_tag
-
-
-def ask_confirm(text: str) -> bool:
-    """Show what miniai would insert/run and ask for a yes/no.
-
-    Writes to stderr and reads stdin directly (not input(), whose prompt
-    goes to stdout) so the exchange stays interactive in the terminal
-    without polluting the stdout that shell-integration/miniai.bash
-    captures via `out=$(...)`.
-    """
-    print(f"\nminiai propose :\n{text}\n", file=sys.stderr)
-    print("Utiliser ce résultat ? [O/n] ", end="", file=sys.stderr, flush=True)
-    reply = sys.stdin.readline().strip().lower()
-    return reply in ("", "o", "oui", "y", "yes")
 
 
 def main(argv=None) -> int:
@@ -33,22 +32,23 @@ def main(argv=None) -> int:
 
     line, point = argv[0], int(argv[1])
     llm = MiniLLM()
+    display_holder = {}
 
     def resolver(request: str, prefix: str, suffix: str) -> str:
+        def record_display(text: str) -> bool:
+            display_holder["text"] = text
+            return True  # always proceed here; bash asks the real question
+
         try:
-            return llm.generate_bash(request, prefix, suffix, confirm=ask_confirm)
-        except ResolutionCancelled:
-            raise
+            return llm.generate_bash(request, prefix, suffix, confirm=record_display)
         except Exception as exc:
             return f"<miniai llm error: {exc}>"
 
-    try:
-        new_line, new_point = resolve_pending_tag(line, point, resolver)
-    except ResolutionCancelled:
-        new_line, new_point = line, point
+    new_line, new_point = resolve_pending_tag(line, point, resolver)
 
     print(new_line)
     print(new_point)
+    print(display_holder.get("text", ""))
     return 0
 
 
