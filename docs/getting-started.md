@@ -93,7 +93,42 @@ En cours de frappe, après avoir tapé `#@ ta demande` (sans `@#` fermant),
 `Ctrl-G` déclenche la résolution immédiatement et insère le résultat dans
 la ligne — pratique pour voir/corriger avant de valider avec Entrée.
 
-## 6. Dépannage rapide
+## 6. Intégration dans ta console bash normale (sans lancer ./bin/miniai)
+
+Plutôt que de lancer un shell séparé, `Ctrl-G` peut être branché directement
+dans ta session bash habituelle, via le mécanisme `bind -x` de bash (qui
+expose `READLINE_LINE` / `READLINE_POINT`, modifiables par une fonction
+shell).
+
+Ajoute à `~/.bashrc` :
+
+```bash
+source /home/jfk/git/dev/miniai/shell-integration/miniai.bash
+```
+
+Puis ouvre un nouveau terminal (ou `source ~/.bashrc`). Ensuite, dans ton
+prompt bash normal :
+
+```text
+jfk@jfk-XPS-8940 ~ $ ls #@ trie par taille
+```
+
+Tape `Ctrl-G` (pas besoin de taper `@#`, ni d'appuyer sur Entrée) : la
+ligne devient immédiatement `ls -S`, modifiable avant de valider avec
+Entrée comme n'importe quelle commande bash normale.
+
+**Piège à connaître** : si tu tapes la balise complète `#@ ... @#` et
+appuies directement sur Entrée **sans** passer par Ctrl-G, bash traite
+tout ce qui suit `#@` comme un **commentaire** (le `#` précédé d'un
+espace) — la partie LLM est donc silencieusement ignorée, sans erreur.
+Exemple : `ls #@ trie par taille @#` + Entrée directe exécute juste `ls`.
+Il faut toujours résoudre avec `Ctrl-G` avant de valider.
+
+Ce mécanisme appelle `bin/miniai-resolve-inline` à chaque `Ctrl-G` (donc
+recharge le modèle à chaque fois, ~2s) — voir la limite connue plus bas si
+la latence gêne à l'usage.
+
+## 7. Dépannage rapide
 
 | Symptôme | Cause probable | Action |
 | --- | --- | --- |
@@ -101,3 +136,5 @@ la ligne — pratique pour voir/corriger avant de valider avec Entrée.
 | Réponse lente au premier appel | chargement du modèle | normal, ~2-4s |
 | Ligne exécutée bizarre après résolution | modèle 1.5B + prompt minimal | voir "Limite connue" dans le README |
 | `ModuleNotFoundError: llama_cpp` | venv pas utilisé | vérifier que `.venv/bin/python` existe et que `bin/miniai` le détecte |
+| `Ctrl-G` ne fait rien dans mon terminal | `shell-integration/miniai.bash` pas sourcé | vérifier `~/.bashrc`, ouvrir un nouveau terminal |
+| `#@ ... @#` exécuté tel quel / ignoré silencieusement | Entrée pressée sans passer par `Ctrl-G` d'abord | toujours résoudre avec `Ctrl-G` avant Entrée (voir section 6) |

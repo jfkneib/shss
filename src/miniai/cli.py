@@ -4,7 +4,7 @@ import sys
 from . import __version__
 from .llm import MiniLLM
 from .shell import PersistentShell
-from .tags import expand_line
+from .tags import expand_line, resolve_pending_tag
 
 
 def build_key_bindings(llm: MiniLLM):
@@ -12,26 +12,19 @@ def build_key_bindings(llm: MiniLLM):
 
     kb = KeyBindings()
 
+    def resolver(request: str, prefix: str, suffix: str) -> str:
+        try:
+            return llm.generate_bash(request, prefix, suffix)
+        except Exception as exc:  # pragma: no cover - interactive feedback only
+            return f"<miniai llm error: {exc}>"
+
     @kb.add("c-g")
     def _(event):
         """Resolve the #@ ... currently being typed, without waiting for @# + Enter."""
         buf = event.app.current_buffer
-        text = buf.text
-        cursor = buf.cursor_position
-        before = text[:cursor]
-
-        idx = before.rfind("#@")
-        if idx == -1 or "@#" in before[idx:]:
-            return
-
-        request = before[idx + 2 :]
-        try:
-            fragment = llm.generate_bash(request)
-        except Exception as exc:  # pragma: no cover - interactive feedback only
-            fragment = f"<miniai llm error: {exc}>"
-
-        buf.text = text[:idx] + fragment + text[cursor:]
-        buf.cursor_position = idx + len(fragment)
+        new_text, new_point = resolve_pending_tag(buf.text, buf.cursor_position, resolver)
+        buf.text = new_text
+        buf.cursor_position = new_point
 
     return kb
 

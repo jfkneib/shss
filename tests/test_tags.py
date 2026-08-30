@@ -3,7 +3,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from miniai.tags import expand_line, find_requests
+from miniai.tags import expand_line, find_requests, resolve_pending_tag
 
 
 def test_find_requests_single():
@@ -41,3 +41,34 @@ def test_expand_line_passes_surrounding_context():
 
     expand_line("ls #@ cachés @# -1", resolver)
     assert seen == {"prefix": "ls ", "suffix": " -1"}
+
+
+def _upper_resolver(request, prefix, suffix):
+    return request.upper()
+
+
+def test_resolve_pending_tag_no_tag_returns_unchanged():
+    line = "ls -la"
+    assert resolve_pending_tag(line, len(line), _upper_resolver) == (line, len(line))
+
+
+def test_resolve_pending_tag_open_tag_at_cursor():
+    line = "ls #@ trie par taille"
+    point = len(line)
+    new_line, new_point = resolve_pending_tag(line, point, _upper_resolver)
+    assert new_line == "ls TRIE PAR TAILLE"
+    assert new_point == len(new_line)
+
+
+def test_resolve_pending_tag_already_closed_tag_is_ignored():
+    line = "ls #@ trie par taille @# -a"
+    point = len(line)
+    assert resolve_pending_tag(line, point, _upper_resolver) == (line, point)
+
+
+def test_resolve_pending_tag_keeps_suffix_after_cursor():
+    line = "ls #@ trie par taille -a"
+    point = len("ls #@ trie par taille")
+    new_line, new_point = resolve_pending_tag(line, point, _upper_resolver)
+    assert new_line == "ls TRIE PAR TAILLE -a"
+    assert new_point == len("ls TRIE PAR TAILLE")
