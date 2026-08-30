@@ -61,6 +61,14 @@ Pour pointer vers un autre fichier `.gguf` :
 export MINIAI_MODEL_PATH=/chemin/vers/modele.gguf
 ```
 
+**Ollama n'est pas requis.** Le code ne lance jamais le binaire `ollama`
+ni ne contacte de serveur — il lit juste un fichier `.gguf` sur disque.
+Ollama sert uniquement de raccourci pratique pour obtenir ce fichier sans
+le télécharger soi-même (via `discover_gguf_path`, qui lit le manifest
+qu'Ollama a laissé sur disque). Sans Ollama installé, `MINIAI_MODEL_PATH`
+vers n'importe quel `.gguf` (téléchargé par exemple depuis Hugging Face)
+suffit à faire fonctionner miniai de la même façon.
+
 ## Limites connues
 
 `qwen2.5-coder:1.5b-base` est un petit modèle base avec un prompt few-shot
