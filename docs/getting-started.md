@@ -240,6 +240,7 @@ src/miniai/
   tags.py                  regex #@ ... @#, expand_line(), resolve_pending_tag()
   llm.py                   modèle GGUF, prompt, dispatch fragment bash / script
   history.py               journal JSONL des résolutions (~/.miniai/history.jsonl)
+  context.py               aperçu des fichiers mentionnés, injecté dans le prompt caché
   shell.py                 session bash persistante (subprocess + marqueur sentinel)
 requirements.txt           dépendances Python : llama-cpp-python, prompt_toolkit
 tests/                     tests unitaires (chargent jamais le vrai modèle)
@@ -266,11 +267,13 @@ Le rôle précis de chaque fichier :
   - `discover_gguf_path()` — cherche le fichier `.gguf` déjà téléchargé
     par Ollama, en lisant son manifest JSON. Voir "Configuration"
     ci-dessous pour l'ordre de recherche et comment le surcharger.
-  - `FEW_SHOT` — le gabarit de prompt (exemples + `{prefix}`/`█`/`{suffix}`),
-    y compris l'exemple qui enseigne l'escalade vers un script (réponse
-    commençant par un shebang).
+  - `FEW_SHOT` — le gabarit de prompt (exemples + `{prefix}`/`█`/`{suffix}`
+    /`{context}`), y compris les exemples qui enseignent l'escalade vers
+    un script (réponse commençant par un shebang) et l'usage du contexte
+    fichier (exemple CSV avec en-tête → `csv.DictReader`).
   - `MiniLLM.generate_bash(request, prefix, suffix, confirm=None)` —
-    charge le modèle au premier appel (lazy), construit le prompt, appelle
+    charge le modèle au premier appel (lazy), appelle
+    `context.build_context(request)` puis construit le prompt, appelle
     `llama_cpp.Llama(...)`. Détermine le texte à afficher/utiliser (script
     entier si la réponse commence par `#!`, sinon sa première ligne). Si
     `confirm` est fourni, l'appelle avec ce texte ; un retour faux lève
@@ -282,6 +285,13 @@ Le rôle précis de chaque fichier :
 - **`src/miniai/history.py`** — `log_event(...)` ajoute une ligne JSON à
   `~/.miniai/history.jsonl` (ou `MINIAI_HISTORY_PATH`) ; `read_events(limit)`
   relit les dernières entrées, utilisé par `cli.py --history`.
+- **`src/miniai/context.py`** — `build_context(request)` : repère les
+  noms de fichiers plausibles dans la demande (regex), et pour ceux qui
+  existent vraiment sur disque, ajoute un aperçu (5 lignes / 300
+  caractères max) au prompt caché envoyé au modèle. N'ajoute
+  délibérément **aucun** listing du dossier courant par défaut — une
+  version antérieure le faisait et ça cassait les demandes simples sans
+  rapport avec des fichiers (bruit non pertinent pour le modèle).
 - **`src/miniai/shell.py`** — `PersistentShell` : un seul processus
   `bash --norc --noprofile` gardé ouvert (via `subprocess.Popen`), à qui
   on envoie chaque ligne suivie d'un `echo` avec un marqueur aléatoire

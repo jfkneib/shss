@@ -127,6 +127,21 @@ Testé en réel : fonctionne, mais avec les mêmes limites de fiabilité
 qu'ailleurs sur ce modèle 1.5B (ex: peut légèrement s'écarter du nom de
 fichier demandé, ou ne pas gérer une structure de données complexe).
 
+Pour aider le modèle à écrire un script adapté au **contenu réel** d'un
+fichier plutôt que de deviner, un aperçu (quelques premières lignes) de
+tout fichier explicitement nommé dans la demande est glissé dans le
+prompt caché (`src/miniai/context.py::build_context`) — invisible pour
+l'utilisateur, qui ne voit toujours que ce qu'il tape. Sur un CSV avec
+en-tête, le résultat est net (utilise `csv.DictReader`, bons noms de
+clés) ; sur un format moins standard (ex: valeurs séparées par `;` sans
+en-tête), le modèle sait qu'il doit utiliser le module `csv` mais ne
+détecte pas toujours le bon séparateur tout seul. Volontairement, **aucun
+listing du dossier courant n'est ajouté par défaut** : une première
+version le faisait systématiquement et ça cassait des demandes simples
+sans rapport avec des fichiers (`ls #@ trie par taille @#` générait un
+résultat aberrant à cause de ce bruit non pertinent) — seul un fichier
+explicitement mentionné (et qui existe) déclenche un aperçu.
+
 Chaque résolution (fragment ou script) est enregistrée dans un
 historique — `~/.miniai/history.jsonl`, une ligne JSON par entrée
 (horodatage, demande, résultat, type) :
@@ -173,6 +188,7 @@ src/miniai/
   tags.py                  détection/remplacement des balises #@ ... @#
   llm.py                   modèle GGUF, prompt, dispatch fragment/script
   history.py               journal JSONL des résolutions (~/.miniai/history.jsonl)
+  context.py               aperçu des fichiers mentionnés, injecté dans le prompt caché
   shell.py                 session bash persistante (sentinel-based)
 tests/                     tests (ne chargent pas le modèle, sauf mention contraire)
 docs/                      documentation

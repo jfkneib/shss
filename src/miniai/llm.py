@@ -5,6 +5,7 @@ import time
 import uuid
 from pathlib import Path
 
+from .context import build_context
 from .history import log_event
 
 MODEL_NAME = os.environ.get("MINIAI_MODEL_NAME", "qwen2.5-coder")
@@ -44,7 +45,10 @@ une ligne shebang comme #!/usr/bin/env python3 ou #!/usr/bin/env bash, et
 choisis le langage le plus adapté. Le script s'exécute seul, sans aucun
 argument en ligne de commande : n'utilise jamais sys.argv ni $1/$2, écris
 en dur dans le code les noms de fichiers mentionnés dans la demande.
-Sinon, réponds par du bash sur une seule ligne, sans explication.
+Sinon, réponds par du bash sur une seule ligne, sans explication. Une
+ligne "Contexte" peut donner le contenu réel d'un fichier mentionné :
+utilise-le pour écrire un code adapté (ex: le bon séparateur de colonnes)
+plutôt que de deviner.
 
 Ligne: █
 Demande: liste tous les fichiers pdf du dossier courant
@@ -67,8 +71,21 @@ with open("notes.txt") as f:
 with open("notes.json", "w") as f:
     json.dump(lignes, f, ensure_ascii=False, indent=2)
 
+Ligne: █
+Contexte : Aperçu de /tmp/a.csv :
+nom,age
+alice,30
+bob,25
+Demande: convertis /tmp/a.csv en JSON et écris le résultat dans /tmp/a.json
+Réponse: #!/usr/bin/env python3
+import csv, json
+with open("/tmp/a.csv") as f:
+    lignes = list(csv.DictReader(f))
+with open("/tmp/a.json", "w") as f:
+    json.dump(lignes, f, ensure_ascii=False, indent=2)
+
 Ligne: {prefix}█{suffix}
-Demande: {request}
+{context}Demande: {request}
 Réponse:"""
 
 
@@ -165,7 +182,8 @@ class MiniLLM:
         """
         self._ensure_loaded()
         request = request.strip()
-        prompt = FEW_SHOT.format(request=request, prefix=prefix, suffix=suffix)
+        context = build_context(request)
+        prompt = FEW_SHOT.format(request=request, prefix=prefix, suffix=suffix, context=context)
         out = self._llm(
             prompt,
             max_tokens=200,
