@@ -6,6 +6,9 @@ miniai \- console bash augmentée par un petit LLM local, via des balises #@ ...
 [\fB\-c\fR \fICOMMANDE\fR]
 .br
 .B miniai
+[\fB\-\-history\fR [\fIN\fR]]
+.br
+.B miniai
 \fB\-\-version\fR
 .SH DESCRIPTION
 .B miniai
@@ -34,8 +37,26 @@ ls #@ 1ère demande @#  #@ 2ème demande @#
 Résout et exécute \fICOMMANDE\fR une seule fois, puis quitte, au lieu de
 lancer le REPL.
 .TP
+.BR \-\-history " [" \fIN\fR ]
+Affiche les \fIN\fR dernières résolutions de l'historique (défaut 20)
+puis quitte, sans charger le modèle. Voir \fBHISTORIQUE ET SCRIPTS\fR.
+.TP
 .B \-\-version
 Affiche la version de miniai et quitte.
+.SH HISTORIQUE ET SCRIPTS
+Pour une demande trop complexe pour tenir sur une seule ligne (plusieurs
+étapes, transformation de fichier...), le modèle peut répondre par un
+script complet plutôt qu'un fragment bash : sa réponse commence alors par
+une ligne shebang (\fB#!/usr/bin/env python3\fR, \fB#!/usr/bin/env
+bash\fR, ...), qui indique le langage choisi. Le script est écrit dans un
+fichier temporaire nommé par date et identifiant unique
+.RI ( "/tmp/miniai\-<uid>/AAAAMMJJ\-HHMMSS_xxxxxx.py" ", par exemple),"
+rendu exécutable, et c'est ce chemin qui remplace la balise dans la
+ligne.
+.PP
+Chaque résolution (fragment ou script) est journalisée dans
+\fB~/.miniai/history.jsonl\fR (une ligne JSON par entrée : horodatage,
+demande, contexte, résultat, type). Voir l'option \fB\-\-history\fR.
 .SH RACCOURCI CTRL\-G
 Dans le REPL, \fBCtrl\-G\fR résout immédiatement la balise la plus proche
 du curseur — fermée par \fB@#\fR ou encore en cours de frappe — sans
@@ -70,6 +91,10 @@ Tag du modèle Ollama à chercher. Par défaut : \fB1.5b\-base\fR.
 .B OLLAMA_MODELS
 Dossier où Ollama range ses modèles, utilisé par la recherche
 automatique si présent.
+.TP
+.B MINIAI_HISTORY_PATH
+Chemin du fichier d'historique JSON Lines. Par défaut :
+\fB~/.miniai/history.jsonl\fR.
 .SH FICHIERS
 .TP
 .I /opt/miniai/

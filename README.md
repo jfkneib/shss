@@ -92,6 +92,37 @@ qu'Ollama a laissé sur disque). Sans Ollama installé, `MINIAI_MODEL_PATH`
 vers n'importe quel `.gguf` (téléchargé par exemple depuis Hugging Face)
 suffit à faire fonctionner miniai de la même façon.
 
+## Scripts et historique
+
+Pour une demande trop complexe pour tenir sur une ligne (plusieurs
+étapes, transformation de fichier...), le modèle peut répondre par un
+script complet au lieu d'un fragment bash — il choisit lui-même le
+langage (Python, bash, ...) via la ligne shebang en tête de sa réponse
+(`#!/usr/bin/env python3`, `#!/usr/bin/env bash`, ...). Le script est
+écrit dans un fichier temporaire nommé par date + identifiant unique
+(`/tmp/miniai-<uid>/20260830-161859_d80a29.py`), rendu exécutable, et
+c'est ce chemin qui remplace la balise dans la ligne :
+
+```bash
+#@ formate le fichier /tmp/dede.txt en json et écris le résultat dans /tmp/result.json @#
+# → /tmp/miniai-1000/20260830-161859_d80a29.py
+```
+
+Testé en réel : fonctionne, mais avec les mêmes limites de fiabilité
+qu'ailleurs sur ce modèle 1.5B (ex: peut légèrement s'écarter du nom de
+fichier demandé, ou ne pas gérer une structure de données complexe).
+
+Chaque résolution (fragment ou script) est enregistrée dans un
+historique — `~/.miniai/history.jsonl`, une ligne JSON par entrée
+(horodatage, demande, résultat, type) :
+
+```bash
+miniai --history        # les 20 dernières résolutions
+miniai --history 50     # les 50 dernières
+```
+
+`--history` n'a pas besoin de charger le modèle, donc c'est instantané.
+
 ## Limites connues
 
 `qwen2.5-coder:1.5b-base` est un petit modèle base avec un prompt few-shot
@@ -122,10 +153,11 @@ bin/miniai-resolve-inline  point d'entrée pour l'intégration Ctrl-G dans bash
 shell-integration/
   miniai.bash              à sourcer dans ~/.bashrc pour le Ctrl-G "natif"
 src/miniai/
-  cli.py                   REPL / mode -c, raccourci clavier Ctrl-G
+  cli.py                   REPL / mode -c / --history, raccourci clavier Ctrl-G
   inline.py                résolution ponctuelle (utilisé par bin/miniai-resolve-inline)
   tags.py                  détection/remplacement des balises #@ ... @#
-  llm.py                   chargement du modèle GGUF et génération du fragment bash
+  llm.py                   modèle GGUF, prompt, dispatch fragment/script
+  history.py               journal JSONL des résolutions (~/.miniai/history.jsonl)
   shell.py                 session bash persistante (sentinel-based)
 tests/                     tests (ne chargent pas le modèle, sauf mention contraire)
 docs/                      documentation

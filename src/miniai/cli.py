@@ -80,6 +80,20 @@ def run_once(llm: MiniLLM, line: str) -> int:
         shell.close()
 
 
+def print_history(limit: int) -> int:
+    from .history import read_events
+
+    events = read_events(limit)
+    if not events:
+        print("miniai: historique vide")
+        return 0
+
+    for e in events:
+        arrow = f"{e['request']!r} -> {e['result']!r}"
+        print(f"[{e['timestamp']}] {e['kind']:6} {arrow}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="miniai",
@@ -94,12 +108,23 @@ def build_parser() -> argparse.ArgumentParser:
         dest="command",
         help="Exécute une seule ligne (comme bash -c) puis quitte, au lieu de lancer le REPL.",
     )
+    parser.add_argument(
+        "--history",
+        nargs="?",
+        const=20,
+        type=int,
+        metavar="N",
+        help="Affiche les N dernières résolutions (défaut 20) puis quitte.",
+    )
     return parser
 
 
 def main(argv=None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    if args.history is not None:
+        return print_history(args.history)
 
     llm = MiniLLM()
 

@@ -178,7 +178,38 @@ Ce mécanisme appelle `bin/miniai-resolve-inline` à chaque `Ctrl-G` (donc
 recharge le modèle à chaque fois, ~2s) — voir la limite connue plus bas si
 la latence gêne à l'usage.
 
-## 8. Le code : qui fait quoi
+## 8. Scripts et historique
+
+Pour une demande trop complexe pour tenir sur une ligne (plusieurs
+étapes, transformation de fichier...), le modèle peut répondre par un
+script complet au lieu d'un simple fragment bash. Il choisit lui-même le
+langage en commençant sa réponse par une ligne shebang
+(`#!/usr/bin/env python3`, `#!/usr/bin/env bash`, ...). Le script est
+alors écrit dans un fichier temporaire nommé par date + identifiant
+unique, rendu exécutable, et c'est ce chemin qui remplace la balise :
+
+```bash
+./bin/miniai -c '#@ formate le fichier /tmp/dede.txt en json et écris le résultat dans /tmp/result.json @#'
+# → /tmp/miniai-1000/20260830-161859_d80a29.py
+```
+
+Testé en réel — ça marche, avec les mêmes limites de fiabilité que le
+reste sur ce modèle 1.5B (le nom de fichier exact ou la structure des
+données peuvent légèrement s'écarter de la demande).
+
+Chaque résolution (fragment ou script) est enregistrée dans un
+historique JSON Lines, une ligne par entrée :
+
+```bash
+./bin/miniai --history        # les 20 dernières résolutions
+./bin/miniai --history 50     # les 50 dernières
+```
+
+Fichier : `~/.miniai/history.jsonl` (surchargeable via
+`MINIAI_HISTORY_PATH`). `--history` ne charge pas le modèle, donc c'est
+instantané, même sans GPU/CPU disponible.
+
+## 9. Le code : qui fait quoi
 
 ```text
 bin/miniai                 point d'entrée bash du REPL
@@ -186,10 +217,11 @@ bin/miniai-resolve-inline  point d'entrée bash pour le Ctrl-G "natif" dans ta c
 shell-integration/
   miniai.bash              fonction bash + `bind -x "\C-g"`, à sourcer dans ~/.bashrc
 src/miniai/
-  cli.py                   REPL (prompt_toolkit), mode -c, boucle principale, argparse
+  cli.py                   REPL (prompt_toolkit), mode -c / --history, argparse
   inline.py                résolution ponctuelle appelée par bin/miniai-resolve-inline
   tags.py                  regex #@ ... @#, expand_line(), resolve_pending_tag()
-  llm.py                   chargement du modèle GGUF, découverte du fichier, prompt, génération
+  llm.py                   modèle GGUF, prompt, dispatch fragment bash / script
+  history.py               journal JSONL des résolutions (~/.miniai/history.jsonl)
   shell.py                 session bash persistante (subprocess + marqueur sentinel)
 requirements.txt           dépendances Python : llama-cpp-python, prompt_toolkit
 tests/                     tests unitaires (chargent jamais le vrai modèle)
@@ -216,10 +248,18 @@ Le rôle précis de chaque fichier :
   - `discover_gguf_path()` — cherche le fichier `.gguf` déjà téléchargé
     par Ollama, en lisant son manifest JSON. Voir "Configuration"
     ci-dessous pour l'ordre de recherche et comment le surcharger.
-  - `FEW_SHOT` — le gabarit de prompt (exemples + `{prefix}`/`█`/`{suffix}`).
+  - `FEW_SHOT` — le gabarit de prompt (exemples + `{prefix}`/`█`/`{suffix}`),
+    y compris l'exemple qui enseigne l'escalade vers un script (réponse
+    commençant par un shebang).
   - `MiniLLM.generate_bash(request, prefix, suffix)` — charge le modèle
     au premier appel (lazy), construit le prompt, appelle
-    `llama_cpp.Llama(...)`, renvoie le texte généré.
+    `llama_cpp.Llama(...)`. Si la réponse commence par `#!`, l'écrit via
+    `_write_script()` dans `SCRIPT_DIR` (`/tmp/miniai-<uid>/`) et renvoie
+    son chemin ; sinon ne garde que la première ligne comme fragment.
+    Journalise systématiquement le résultat via `history.log_event()`.
+- **`src/miniai/history.py`** — `log_event(...)` ajoute une ligne JSON à
+  `~/.miniai/history.jsonl` (ou `MINIAI_HISTORY_PATH`) ; `read_events(limit)`
+  relit les dernières entrées, utilisé par `cli.py --history`.
 - **`src/miniai/shell.py`** — `PersistentShell` : un seul processus
   `bash --norc --noprofile` gardé ouvert (via `subprocess.Popen`), à qui
   on envoie chaque ligne suivie d'un `echo` avec un marqueur aléatoire
@@ -235,7 +275,7 @@ Le rôle précis de chaque fichier :
   `resolve_pending_tag`, imprime la nouvelle ligne puis la nouvelle
   position sur deux lignes de stdout (lu par `shell-integration/miniai.bash`).
 
-## 9. Configuration
+## 10. Configuration
 
 Tout se fait par variables d'environnement, pas de fichier de config :
 
@@ -245,6 +285,7 @@ Tout se fait par variables d'environnement, pas de fichier de config :
 | `MINIAI_MODEL_NAME` | Nom du modèle Ollama à chercher si `MINIAI_MODEL_PATH` n'est pas défini | `qwen2.5-coder` |
 | `MINIAI_MODEL_TAG` | Tag du modèle Ollama à chercher | `1.5b-base` |
 | `OLLAMA_MODELS` | Dossier où Ollama range ses modèles, utilisé par la recherche automatique | (voir ci-dessous) |
+| `MINIAI_HISTORY_PATH` | Chemin du fichier d'historique JSON Lines | `~/.miniai/history.jsonl` |
 
 Sans `MINIAI_MODEL_PATH`, `discover_gguf_path()` (dans `llm.py`) cherche le
 manifest `registry.ollama.ai/library/<name>/<tag>` dans, dans l'ordre :
@@ -272,7 +313,7 @@ Installées dans `.venv/` (voir étape 2), pas au niveau système — la
 machine est en environnement Python "externally managed" (Debian/Ubuntu),
 d'où le `python3 -m venv .venv` plutôt qu'un `pip install` direct.
 
-## 10. Dépannage rapide
+## 11. Dépannage rapide
 
 | Symptôme | Cause probable | Action |
 | --- | --- | --- |

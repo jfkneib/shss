@@ -1,6 +1,11 @@
 import json
 import os
+import tempfile
+import time
+import uuid
 from pathlib import Path
+
+from .history import log_event
 
 MODEL_NAME = os.environ.get("MINIAI_MODEL_NAME", "qwen2.5-coder")
 MODEL_TAG = os.environ.get("MINIAI_MODEL_TAG", "1.5b-base")
@@ -18,8 +23,28 @@ _KNOWN_OLLAMA_DIRS = [
 # install`, sans configuration.
 SYSTEM_MODEL_PATH = "/opt/miniai/model/model.gguf"
 
-FEW_SHOT = """Tu complètes une ligne de commande bash. Le symbole █ marque l'endroit à remplir.
-Réponds uniquement par le texte qui remplace █, sur une seule ligne, sans explication.
+# Dossier où sont écrits les scripts générés pour les demandes trop
+# complexes pour tenir sur une ligne (un par utilisateur, pour ne pas se
+# marcher dessus sur une machine partagée).
+SCRIPT_DIR = Path(tempfile.gettempdir()) / f"miniai-{os.getuid()}"
+
+_SHEBANG_EXTENSIONS = [
+    ("python", ".py"),
+    ("bash", ".sh"),
+    ("sh", ".sh"),
+    ("perl", ".pl"),
+    ("node", ".js"),
+]
+
+FEW_SHOT = """Tu réponds à une demande soit par un fragment bash à insérer dans une
+ligne existante (le symbole █ marque l'endroit à remplir), soit par un
+script complet si la tâche demande plusieurs étapes (fichiers,
+transformation de données, etc). Pour un script, commence directement par
+une ligne shebang comme #!/usr/bin/env python3 ou #!/usr/bin/env bash, et
+choisis le langage le plus adapté. Le script s'exécute seul, sans aucun
+argument en ligne de commande : n'utilise jamais sys.argv ni $1/$2, écris
+en dur dans le code les noms de fichiers mentionnés dans la demande.
+Sinon, réponds par du bash sur une seule ligne, sans explication.
 
 Ligne: █
 Demande: liste tous les fichiers pdf du dossier courant
@@ -32,6 +57,15 @@ Réponse: -la
 Ligne: echo debut █ echo fin
 Demande: affiche la date du jour
 Réponse: && date &&
+
+Ligne: █
+Demande: formate le fichier notes.txt en JSON valide et écris le résultat dans notes.json
+Réponse: #!/usr/bin/env python3
+import json
+with open("notes.txt") as f:
+    lignes = [l.strip() for l in f if l.strip()]
+with open("notes.json", "w") as f:
+    json.dump(lignes, f, ensure_ascii=False, indent=2)
 
 Ligne: {prefix}█{suffix}
 Demande: {request}
@@ -77,6 +111,25 @@ def discover_gguf_path(model=MODEL_NAME, tag=MODEL_TAG):
     )
 
 
+def _script_extension(shebang_line: str) -> str:
+    for keyword, ext in _SHEBANG_EXTENSIONS:
+        if keyword in shebang_line:
+            return ext
+    return ".sh"
+
+
+def _write_script(text: str) -> str:
+    """Save a model-generated script (starting with a shebang line) to a
+    fresh, timestamped, per-user file in tmp and return its path."""
+    SCRIPT_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
+    ext = _script_extension(text.splitlines()[0])
+    name = f"{time.strftime('%Y%m%d-%H%M%S')}_{uuid.uuid4().hex[:6]}{ext}"
+    path = SCRIPT_DIR / name
+    path.write_text(text, encoding="utf-8")
+    path.chmod(0o700)
+    return str(path)
+
+
 class MiniLLM:
     def __init__(self, model_path=None, n_ctx=2048):
         self.model_path = model_path or discover_gguf_path()
@@ -95,11 +148,24 @@ class MiniLLM:
 
     def generate_bash(self, request: str, prefix: str = "", suffix: str = "") -> str:
         self._ensure_loaded()
-        prompt = FEW_SHOT.format(request=request.strip(), prefix=prefix, suffix=suffix)
+        request = request.strip()
+        prompt = FEW_SHOT.format(request=request, prefix=prefix, suffix=suffix)
         out = self._llm(
             prompt,
-            max_tokens=64,
+            max_tokens=200,
             temperature=0.2,
-            stop=["\n", "Ligne:"],
+            stop=["\nLigne:"],
         )
-        return out["choices"][0]["text"].strip()
+        text = out["choices"][0]["text"].strip()
+
+        if text.startswith("#!"):
+            result = _write_script(text)
+            kind = "script"
+        else:
+            # Pas un script : un seul fragment sur une ligne, on ignore
+            # tout ce que le modèle aurait pu générer en trop après.
+            result = text.split("\n", 1)[0].strip()
+            kind = "inline"
+
+        log_event(request, prefix, suffix, result, kind)
+        return result
