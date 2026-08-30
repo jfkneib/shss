@@ -1,5 +1,18 @@
 # Démarrage, premiers tests, et comment ça marche
 
+> **Toutes les commandes `./bin/miniai ...` de ce document supposent que
+> tu es dans le dossier du dépôt** (`./` est un chemin relatif) :
+>
+> ```bash
+> cd /home/jfk/git/dev/miniai
+> ```
+>
+> Si tu es ailleurs (ex: `~`), bash renvoie
+> `Aucun fichier ou dossier de ce nom`. Une fois `source
+> shell-integration/miniai.bash` fait dans ton `~/.bashrc` (section 7),
+> tu n'as par contre plus besoin d'être dans ce dossier ni de taper
+> `./bin/miniai` du tout : `Ctrl-G` marche depuis n'importe où.
+
 ## 1. Comment ça marche, en bref
 
 Le principe en 4 étapes, à chaque fois qu'une ligne contient `#@ demande @#` :
