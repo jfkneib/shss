@@ -188,6 +188,7 @@ class MiniLLM:
             prompt,
             max_tokens=200,
             temperature=0.2,
+            repeat_penalty=1.1,
             stop=["\nLigne:"],
         )
         text = out["choices"][0]["text"].strip()

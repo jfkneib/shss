@@ -187,6 +187,17 @@ Le mécanisme lui-même (détection des balises, injection en place,
 exécution) fonctionne correctement dans tous les cas testés — c'est la
 qualité de la génération qui varie selon la complexité de la demande.
 
+Autre piège observé et corrigé : sans pénalité de répétition,
+`llama-cpp-python` peut faire boucler le modèle sur un motif dégénéré
+jusqu'à la coupure de `max_tokens` — ex. une demande complexe a généré
+`grep -E "^[^ ]+ [^ ]+ [^ ]+ ..."` répété des dizaines de fois, un
+fragment cassé (guillemet jamais fermé) qui bloquait bash en attente de
+la fin de la commande. `repeat_penalty=1.1` (voir `generate_bash` dans
+`llm.py`) corrige cette classe de bug ; une valeur plus agressive
+(testée à 1.3) a en revanche dégradé un cas qui marchait bien (fuite du
+caractère `█` du prompt dans un script généré) — `1.1` est le compromis
+retenu après ce test.
+
 ## Structure du dépôt
 
 ```text
