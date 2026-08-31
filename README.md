@@ -41,8 +41,13 @@ Construire les images (une fois) :
 
 ```bash
 docker build --target cpu  -t shss:cpu  .    # ~400 Mo sur disque, inférence CPU
-docker build --target cuda -t shss:cuda .    # base CUDA, offload GPU (--gpus all)
+docker build --target cuda -t shss:cuda .    # ~10 Go, GPU obligatoire (--gpus all)
 ```
+
+L'image `cuda` embarque la wheel `llama-cpp-python` CUDA (pas de
+compilation) ; elle **ne tourne qu'avec `--gpus all`** sur un hôte doté
+du pilote NVIDIA (`libcuda.so.1` est fourni par le runtime conteneur au
+lancement) — pas de repli CPU. Pour du CPU, utilise l'image `cpu`.
 
 Puis, via le wrapper :
 
@@ -81,8 +86,10 @@ n'est pas accessible depuis l'hôte (limite inhérente au conteneur — le
 mode fragment sur une ligne, lui, s'exécute normalement dans `/work`).
 
 Alternative `compose` (profil `gpu` inclus) : voir
-[compose.yaml](compose.yaml). Publication automatique sur GHCR à chaque
-tag `v*` : voir [.github/workflows/docker.yml](.github/workflows/docker.yml).
+[compose.yaml](compose.yaml). L'image **`cpu`** est publiée sur GHCR à
+chaque tag `v*` (`ghcr.io/jfkneib/shss:<version>` + `:latest`) et sur
+`main` (`:edge`) — voir [.github/workflows/docker.yml](.github/workflows/docker.yml) ;
+l'image `cuda` se construit en local.
 
 ### Réglage des performances (variables d'env)
 

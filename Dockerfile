@@ -55,37 +55,24 @@ ENTRYPOINT ["shss-entrypoint"]
 CMD []
 
 # ---------------------------------------------------------------------------
-# CUDA — stage de build : compile llama-cpp-python avec l'offload CUDA
-# ---------------------------------------------------------------------------
-FROM nvidia/cuda:12.4.1-devel-ubuntu22.04 AS build-cuda
-
-# Turing (75, RTX 20xx / T4), Ampere (86, RTX 30xx), Ada (89, RTX 40xx).
-# Sans ça llama.cpp compile pour toutes les archs -> build > 1 h.
-# Surcharger au besoin : --build-arg CUDA_ARCHITECTURES="86".
-ARG CUDA_ARCHITECTURES="75;86;89"
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        python3 python3-venv python3-pip build-essential cmake git \
-    && rm -rf /var/lib/apt/lists/*
-
-ENV PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1
-RUN python3 -m venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH" \
-    CMAKE_ARGS="-DGGML_CUDA=on -DCMAKE_CUDA_ARCHITECTURES=${CUDA_ARCHITECTURES}"
-
-COPY requirements.txt .
-RUN pip install -r requirements.txt
-
-# ---------------------------------------------------------------------------
 # CUDA — image finale
 # ---------------------------------------------------------------------------
+# Pas de compilation : on installe la wheel llama-cpp-python déjà
+# construite avec l'offload CUDA (index d'abetlen). Compiler llama.cpp
+# CUDA sur un runner CI de 2 cœurs prend > 40 min ; la wheel, ~1 min.
+# cu124 correspond à la base nvidia/cuda:12.4 ; cp310 = python3 d'Ubuntu
+# 22.04. La wheel plafonne à 0.3.19 (l'image cpu, elle, compile la
+# dernière) — sans impact pour l'usage de shss.
 FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04 AS cuda
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        python3 bash curl ca-certificates libgomp1 \
+        python3 python3-venv python3-pip bash curl ca-certificates libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=build-cuda /opt/venv /opt/venv
+RUN python3 -m venv /opt/venv \
+    && /opt/venv/bin/pip install --no-cache-dir --only-binary=llama-cpp-python \
+        --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu124 \
+        "llama-cpp-python==0.3.19" prompt_toolkit
 
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONPATH=/opt/shss/src \

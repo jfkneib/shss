@@ -1,10 +1,12 @@
 name: docker
 
-# Construit et pousse les images sur GHCR :
-#   - à chaque tag v*      -> ghcr.io/<owner>/shss:<version> + :latest (+ -cuda)
+# Construit et pousse l'image CPU sur GHCR :
+#   - à chaque tag v*      -> ghcr.io/<owner>/shss:<version> + :latest
 #   - sur main             -> ghcr.io/<owner>/shss:edge
-# La cible CUDA n'est pas testée en CI (pas de GPU sur les runners) mais
-# elle compile.
+# L'image `cuda` n'est PAS publiée : ~10 Go, GPU obligatoire (donc
+# impossible à smoke-tester sur un runner), et ferait exploser le quota
+# de stockage GHCR d'un dépôt privé. Elle se construit en local sur la
+# machine GPU : docker build --target cuda -t shss:cuda .
 
 on:
   push:
@@ -63,19 +65,6 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: build+push (cuda)
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          target: cuda
-          push: true
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/shss:${{ github.ref_name }}-cuda
-            ghcr.io/${{ github.repository_owner }}/shss:latest-cuda
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
