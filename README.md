@@ -96,6 +96,34 @@ tag `v*` : voir [.github/workflows/docker.yml](.github/workflows/docker.yml).
 Pense à donner assez de ressources au conteneur : `--cpus 4` au minimum,
 et `--memory` ≥ 1,5 Go (1.5b) / 6 Go (7b).
 
+## Mise à jour
+
+Selon la méthode d'installation :
+
+| Installé via | Mettre à jour |
+| --- | --- |
+| Paquet `.deb` | `cd <checkout> && git pull && ./packaging/build.sh && sudo apt install ./shss_<version>_all.deb` |
+| Checkout git seul | `git pull` (rien d'autre) |
+| Docker | `docker pull ghcr.io/jfkneib/shss:latest` (ou `git pull && docker build --target cpu -t shss:cpu .`) |
+
+Dans tous les cas, ce qui est **conservé** : le modèle GGUF (jamais
+re-téléchargé), le venv Python, la ligne `~/.bashrc`, et tes réglages
+(`SHSS_MODEL_TAG`, `SHSS_MODEL_PATH`… vivent dans `~/.bashrc`, pas dans le
+paquet). Le modèle Docker vit dans le volume `shss-models`, également
+préservé.
+
+**Piège `.deb`** : `apt install ./fichier.deb` ne met à jour que si la
+version est **plus grande** — chaque release incrémente
+`src/shss/__init__.py`. Pour forcer la même version :
+`sudo apt install --reinstall ./shss_<version>_all.deb`.
+
+Passer à un modèle plus petit/gros après coup :
+
+```bash
+sudo shss -c '#@ model download 0.5b @#'   # une fois (partagé machine)
+echo 'export SHSS_MODEL_TAG=0.5b' >> ~/.bashrc && source ~/.bashrc
+```
+
 ## Utilisation (depuis un checkout git, sans paquet)
 
 ```bash
