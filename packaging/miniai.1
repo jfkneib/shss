@@ -70,13 +70,21 @@ directement par miniai, sans jamais appeler le LLM (instantané) :
 dans une console normale, chaque appel relance un processus, donc le
 changement ne survit pas à cette seule résolution.
 .PP
-\fBmodel download <tag>\fR télécharge, dans
-.IR ~/.miniai/models/ ,
-un modèle d'une petite liste curatée (famille \fBqwen2.5\-coder\fR
-uniquement — la seule testée avec le prompt de miniai), pour les
-machines sans Ollama. Bloquant, peut prendre du temps selon la taille
-et la connexion ; ne se déclenche que sur cette commande explicite,
-jamais automatiquement.
+\fBmodel download <tag>\fR télécharge un modèle d'une petite liste
+curatée (famille \fBqwen2.5\-coder\fR uniquement — la seule testée avec
+le prompt de miniai), pour les machines sans Ollama. Bloquant, peut
+prendre du temps selon la taille et la connexion ; ne se déclenche que
+sur cette commande explicite, jamais automatiquement.
+.PP
+Lancé avec \fBsudo\fR, le téléchargement va dans
+.I /opt/miniai/models/
+— partagé par tous les utilisateurs de la machine, un seul
+téléchargement pour tout le monde. Sans \fBsudo\fR, il va dans
+.I ~/.miniai/models/
+(un utilisateur normal ne peut pas écrire dans \fB/opt/miniai/\fR).
+\fBmodels\fR et \fBmodel <tag>\fR regardent toujours l'emplacement
+partagé en premier. Le fichier peut ainsi être partagé, mais le choix
+du modèle \fIactif\fR reste toujours individuel, par session.
 .PP
 \fBmodels\fR et \fBmodel <tag>\fR ne connaissent que les modèles déjà
 gérés par Ollama (le seul registre disponible sur disque) — Ollama
@@ -186,8 +194,12 @@ l'installation du paquet, sinon téléchargé depuis Hugging Face).
 Script à sourcer dans \fB~/.bashrc\fR pour le raccourci \fBCtrl\-G\fR
 dans une console bash normale.
 .TP
+.I /opt/miniai/models/
+Modèles curatés téléchargés via \fBsudo ... #@ model download <tag> @#\fR
+— partagés par tous les utilisateurs de la machine.
+.TP
 .I ~/.miniai/models/
-Modèles téléchargés via \fB#@ model download <tag> @#\fR.
+Modèles curatés téléchargés sans \fBsudo\fR — par utilisateur.
 .SH EXEMPLES
 .PP
 .RS

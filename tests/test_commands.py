@@ -21,13 +21,18 @@ class _FakeMiniLLM:
 
 def _fake_manifests(monkeypatch, tmp_path, entries):
     """entries: list of (name, tag). Creates a fake Ollama manifest tree
-    under tmp_path and points _KNOWN_OLLAMA_DIRS at it."""
+    under tmp_path and points _KNOWN_OLLAMA_DIRS at it. Also isolates the
+    curated-model directories from the real machine (e.g. a model
+    genuinely downloaded to ~/.miniai/models/ earlier in this session),
+    since _format_models_list() checks those too."""
     library = tmp_path / "manifests" / "registry.ollama.ai" / "library"
     for name, tag in entries:
         d = library / name
         d.mkdir(parents=True, exist_ok=True)
         (d / tag).write_text("{}")
     monkeypatch.setattr(llm_module, "_KNOWN_OLLAMA_DIRS", [str(tmp_path)])
+    monkeypatch.setattr(llm_module, "SYSTEM_MODELS_DIR", tmp_path / "curated-system")
+    monkeypatch.setattr(llm_module, "MODELS_DIR", tmp_path / "curated-user")
 
 
 def test_try_builtin_returns_none_for_normal_request():

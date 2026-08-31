@@ -61,8 +61,16 @@ CURATED_MODELS = {
     ),
 }
 
-# Où vont les modèles téléchargés ainsi — par utilisateur, persistant
-# (contrairement à SCRIPT_DIR qui est dans /tmp), à côté de history.jsonl.
+# Emplacement partagé par toute la machine : un modèle téléchargé une
+# fois ici (par un admin, via `sudo`) bénéficie à tous les utilisateurs,
+# sans re-téléchargement — cohérent avec /opt/miniai/model/model.gguf du
+# paquet Debian. Consulté par tout le monde, mais seul root peut y écrire.
+SYSTEM_MODELS_DIR = Path("/opt/miniai/models")
+
+# Repli par utilisateur si le modèle n'est pas (encore) dans l'emplacement
+# partagé — c'est là qu'un utilisateur normal (sans sudo) télécharge le
+# sien. Le choix du modèle *actif* reste toujours individuel (variables
+# d'env par session) ; seul le fichier .gguf lui-même peut être partagé.
 MODELS_DIR = Path.home() / ".miniai" / "models"
 
 _SHEBANG_EXTENSIONS = [
@@ -209,28 +217,49 @@ def list_local_models():
 
 
 def curated_model_path(tag: str) -> str:
-    return str(MODELS_DIR / f"{CURATED_MODEL_FAMILY}-{tag}.gguf")
+    """Where `tag` is (or would be) on disk: the shared system location
+    if it's already there (one download benefits every user), else the
+    per-user one — regardless of which one actually has the file yet."""
+    filename = f"{CURATED_MODEL_FAMILY}-{tag}.gguf"
+    system_path = SYSTEM_MODELS_DIR / filename
+    if system_path.is_file():
+        return str(system_path)
+    return str(MODELS_DIR / filename)
 
 
 def download_curated_model(tag: str) -> str:
-    """Download a curated qwen2.5-coder GGUF to MODELS_DIR (skipped if
-    already there) and return its path. Blocking — a multi-GB file can
-    take a while; this is only called from an explicit
-    "#@ model download <tag> @#", never automatically."""
+    """Download a curated qwen2.5-coder GGUF (skipped if already present,
+    system or per-user) and return its path. Blocking — a multi-GB file
+    can take a while; only called from an explicit
+    "#@ model download <tag> @#", never automatically.
+
+    Run as root (e.g. `sudo miniai -c '#@ model download 3b @#'`), it
+    downloads to SYSTEM_MODELS_DIR (/opt/miniai/models/), shared by
+    every user on the machine — one download, everyone benefits, though
+    each user still individually chooses which model is *active* for
+    them. A normal user without root downloads to their own MODELS_DIR
+    instead, since they can't write to /opt/miniai/."""
     if tag not in CURATED_MODELS:
         raise KeyError(
             f"'{tag}' n'est pas dans la liste curatée ({', '.join(CURATED_MODELS)})"
         )
 
-    dest = Path(curated_model_path(tag))
-    if dest.is_file():
-        return str(dest)
+    existing = Path(curated_model_path(tag))
+    if existing.is_file():
+        return str(existing)
+
+    shared = hasattr(os, "geteuid") and os.geteuid() == 0
+    dest_dir = SYSTEM_MODELS_DIR if shared else MODELS_DIR
+    dest = dest_dir / f"{CURATED_MODEL_FAMILY}-{tag}.gguf"
 
     url, _size_mb = CURATED_MODELS[tag]
-    MODELS_DIR.mkdir(parents=True, exist_ok=True)
+    dest_dir.mkdir(parents=True, exist_ok=True)
     tmp_dest = dest.with_name(dest.name + ".part")
     urllib.request.urlretrieve(url, tmp_dest)
     tmp_dest.rename(dest)
+    if shared:
+        dest_dir.chmod(0o755)
+        dest.chmod(0o644)  # lisible par tous les utilisateurs de la machine
     return str(dest)
 
 

@@ -279,12 +279,13 @@ Q4_K_M :
 | `7b` | ~4,5 Go |
 
 ```bash
-./bin/miniai -c '#@ model download 3b @#'   # télécharge dans ~/.miniai/models/
+./bin/miniai -c '#@ model download 3b @#'   # télécharge
 ./bin/miniai -c '#@ model 3b @#'             # puis l'active (trouve le fichier)
 ```
 
 Testé en réel (`1.5b-base`, ~941 Mo) : le téléchargement fonctionne, le
-fichier est bien retrouvé et activé ensuite via `#@ model 1.5b-base @#`.
+fichier est bien retrouvé et activé ensuite via `#@ model 1.5b-base @#`,
+y compris en simulant l'absence d'Ollama pour vérifier le repli.
 Bloquant (peut prendre du temps selon la connexion), et ne se déclenche
 **que** sur cette commande explicite — jamais automatiquement, y
 compris via `#@ model <tag> @#` sur un modèle non téléchargé (qui
@@ -294,6 +295,22 @@ C'est la réponse au cas "pas d'Ollama installé" : sans lui, `models` /
 `model <tag>` seuls ne peuvent rien proposer d'autre qu'indiquer le
 modèle réellement actif (`MINIAI_MODEL_PATH`) — voir "Nuance" dans le
 README, section Modèle LLM.
+
+**Stockage partagé (« installé une fois, tout le monde en profite »).**
+Le fichier `.gguf` lui-même peut être partagé par toute la machine, mais
+**quel** modèle est actif reste toujours un choix individuel (par
+session, via `MINIAI_MODEL_TAG` ou `#@ model <tag> @#`) :
+
+- `sudo ./bin/miniai -c '#@ model download 3b @#'` → télécharge dans
+  `/opt/miniai/models/`, un seul téléchargement pour **tous** les
+  utilisateurs de la machine (cohérent avec l'installation via le
+  paquet Debian).
+- Sans `sudo`, un utilisateur normal télécharge dans son propre
+  `~/.miniai/models/` (il ne peut pas écrire dans `/opt/miniai/`).
+- `curated_model_path()` (`llm.py`) regarde toujours l'emplacement
+  partagé en premier — si quelqu'un l'a déjà téléchargé pour tout le
+  monde, `#@ models @#` l'affiche "déjà téléchargé" pour tous les
+  utilisateurs, pas seulement celui qui l'a lancé.
 
 ### Ctrl-Y : sélecteur de modèle interactif
 

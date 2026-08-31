@@ -204,16 +204,30 @@ c'est la seule famille testée/fiable avec le prompt de ce projet (voir
 "Limites connues"). C'est ce qui répond au cas "pas d'Ollama installé" :
 
 ```bash
-#@ model download 3b @#   # télécharge ~1,9 Go dans ~/.miniai/models/
+#@ model download 3b @#   # télécharge ~1,9 Go
 #@ model 3b @#             # puis l'active (trouve le fichier déjà téléchargé)
 ```
 
 Actuellement dans la liste : `1.5b-base` (~941 Mo, le défaut), `3b`
-(~1,9 Go), `7b` (~4,5 Go). Stockage : `~/.miniai/models/` (persistant,
-par utilisateur — contrairement aux scripts générés qui vont dans
-`/tmp`). Le téléchargement est bloquant et peut prendre du temps selon
-la connexion ; il ne se déclenche **que** sur cette commande explicite,
-jamais automatiquement.
+(~1,9 Go), `7b` (~4,5 Go). Le téléchargement est bloquant et peut prendre
+du temps selon la connexion ; il ne se déclenche **que** sur cette
+commande explicite, jamais automatiquement.
+
+**Stockage — partagé si possible, individuel sinon** (le fichier
+`.gguf` est partagé pour ne pas le retélécharger, mais **quel** modèle
+est actif reste toujours un choix individuel, par session) :
+
+- Lancé avec `sudo` (ex: `sudo miniai -c '#@ model download 3b @#'`),
+  le téléchargement va dans `/opt/miniai/models/` — un seul
+  téléchargement, **partagé par tous les utilisateurs de la machine**,
+  cohérent avec l'installation via le paquet Debian ("installé une
+  fois, tout le monde en bénéficie").
+- Sans `sudo`, il va dans `~/.miniai/models/` (par utilisateur) — un
+  utilisateur normal ne peut pas écrire dans `/opt/miniai/`.
+- `#@ models @#` et `#@ model <tag> @#` consultent toujours l'emplacement
+  partagé en premier, avant celui de l'utilisateur — si un admin a déjà
+  téléchargé un modèle pour tout le monde, personne d'autre n'a besoin
+  de le refaire.
 
 ### Sélecteur de modèle interactif (Ctrl-Y)
 

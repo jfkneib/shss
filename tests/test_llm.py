@@ -29,9 +29,19 @@ def test_download_curated_model_rejects_unknown_tag():
         pass
 
 
+def _isolate_models_dirs(monkeypatch, tmp_path):
+    """Point both the shared and per-user curated-model directories at
+    tmp_path subfolders that don't exist yet, so tests never touch the
+    real /opt/miniai/models or ~/.miniai/models."""
+    monkeypatch.setattr(llm_module, "SYSTEM_MODELS_DIR", tmp_path / "system")
+    monkeypatch.setattr(llm_module, "MODELS_DIR", tmp_path / "user")
+
+
 def test_download_curated_model_skips_if_already_present(monkeypatch, tmp_path):
-    monkeypatch.setattr(llm_module, "MODELS_DIR", tmp_path)
-    existing = tmp_path / f"{llm_module.CURATED_MODEL_FAMILY}-3b.gguf"
+    _isolate_models_dirs(monkeypatch, tmp_path)
+    user_dir = tmp_path / "user"
+    user_dir.mkdir(parents=True)
+    existing = user_dir / f"{llm_module.CURATED_MODEL_FAMILY}-3b.gguf"
     existing.write_bytes(b"deja la")
 
     def fail_if_called(*a, **k):
@@ -44,7 +54,8 @@ def test_download_curated_model_skips_if_already_present(monkeypatch, tmp_path):
 
 
 def test_download_curated_model_downloads_when_missing(monkeypatch, tmp_path):
-    monkeypatch.setattr(llm_module, "MODELS_DIR", tmp_path)
+    _isolate_models_dirs(monkeypatch, tmp_path)
+    monkeypatch.setattr(llm_module.os, "geteuid", lambda: 1000)  # utilisateur normal
     calls = []
 
     def fake_urlretrieve(url, dest):
@@ -54,15 +65,44 @@ def test_download_curated_model_downloads_when_missing(monkeypatch, tmp_path):
     monkeypatch.setattr(llm_module.urllib.request, "urlretrieve", fake_urlretrieve)
 
     path = llm_module.download_curated_model("3b")
-    assert path == str(tmp_path / f"{llm_module.CURATED_MODEL_FAMILY}-3b.gguf")
+    assert path == str(tmp_path / "user" / f"{llm_module.CURATED_MODEL_FAMILY}-3b.gguf")
     assert Path(path).read_bytes() == b"contenu"
     assert len(calls) == 1
 
 
+def test_download_curated_model_as_root_goes_to_shared_dir(monkeypatch, tmp_path):
+    _isolate_models_dirs(monkeypatch, tmp_path)
+    monkeypatch.setattr(llm_module.os, "geteuid", lambda: 0)  # simule sudo
+
+    def fake_urlretrieve(url, dest):
+        Path(dest).write_bytes(b"contenu")
+
+    monkeypatch.setattr(llm_module.urllib.request, "urlretrieve", fake_urlretrieve)
+
+    path = llm_module.download_curated_model("3b")
+    assert path == str(tmp_path / "system" / f"{llm_module.CURATED_MODEL_FAMILY}-3b.gguf")
+
+
+def test_curated_model_path_prefers_shared_over_per_user(monkeypatch, tmp_path):
+    _isolate_models_dirs(monkeypatch, tmp_path)
+    system_dir = tmp_path / "system"
+    user_dir = tmp_path / "user"
+    system_dir.mkdir(parents=True)
+    user_dir.mkdir(parents=True)
+    system_file = system_dir / f"{llm_module.CURATED_MODEL_FAMILY}-3b.gguf"
+    user_file = user_dir / f"{llm_module.CURATED_MODEL_FAMILY}-3b.gguf"
+    system_file.write_bytes(b"partage")
+    user_file.write_bytes(b"prive")
+
+    assert llm_module.curated_model_path("3b") == str(system_file)
+
+
 def test_switch_model_falls_back_to_downloaded_curated_model(monkeypatch, tmp_path):
     monkeypatch.setattr(llm_module, "_KNOWN_OLLAMA_DIRS", [])
-    monkeypatch.setattr(llm_module, "MODELS_DIR", tmp_path)
-    curated = tmp_path / f"{llm_module.CURATED_MODEL_FAMILY}-3b.gguf"
+    _isolate_models_dirs(monkeypatch, tmp_path)
+    user_dir = tmp_path / "user"
+    user_dir.mkdir(parents=True)
+    curated = user_dir / f"{llm_module.CURATED_MODEL_FAMILY}-3b.gguf"
     curated.write_bytes(b"x")
 
     instance = llm_module.MiniLLM.__new__(llm_module.MiniLLM)
@@ -77,7 +117,7 @@ def test_switch_model_falls_back_to_downloaded_curated_model(monkeypatch, tmp_pa
 
 def test_switch_model_not_found_mentions_download_command(monkeypatch, tmp_path):
     monkeypatch.setattr(llm_module, "_KNOWN_OLLAMA_DIRS", [])
-    monkeypatch.setattr(llm_module, "MODELS_DIR", tmp_path)
+    _isolate_models_dirs(monkeypatch, tmp_path)
 
     instance = llm_module.MiniLLM.__new__(llm_module.MiniLLM)
     instance.model_path = "/whatever.gguf"
