@@ -218,12 +218,13 @@ unique, rendu exécutable, et c'est ce chemin qui remplace la balise :
 ```
 
 En mode `-c`/REPL (résolution à l'Entrée), le script est écrit **et
-exécuté** directement, sans confirmation — son contenu n'est jamais
-affiché avant coup puisque seul son chemin apparaît dans la ligne. Via
-`Ctrl-G` en revanche (REPL ou console normale), le script complet est
-affiché avant écriture/exécution et une confirmation est demandée (voir
-sections 6 et 7) — c'est le moyen le plus sûr de relire ce qui va
-tourner avant de valider.
+exécuté** directement, sans rien afficher au préalable — seul son chemin
+apparaît dans la ligne. Via `Ctrl-G`, le script complet est affiché
+avant d'être appliqué : avec confirmation Oui/non dans le REPL (section
+6), ou juste affiché puis appliqué directement dans une console normale
+(section 7, pas de confirmation possible dans ce contexte) — dans les
+deux cas, c'est le moyen le plus sûr de relire ce qui va tourner avant
+de valider avec Entrée.
 
 Testé en réel — ça marche, avec les mêmes limites de fiabilité que le
 reste sur ce modèle 1.5B (le nom de fichier exact ou la structure des
@@ -241,18 +242,68 @@ Fichier : `~/.miniai/history.jsonl` (surchargeable via
 `MINIAI_HISTORY_PATH`). `--history` ne charge pas le modèle, donc c'est
 instantané, même sans GPU/CPU disponible.
 
-## 9. Le code : qui fait quoi
+## 9. Commandes utilitaires et sélecteur de modèle
+
+Certaines demandes entre `#@ ... @#` sont reconnues et traitées
+directement par miniai — jamais envoyées au LLM, donc instantanées
+(vérifié : `time ./bin/miniai -c '#@ models @#'` ≈ 0,07s, pas de
+chargement du modèle) :
+
+```bash
+./bin/miniai -c '#@ models @#'        # liste les modèles, indique l'actif
+./bin/miniai -c '#@ model 3b @#'       # change de modèle
+./bin/miniai -c '#@ history 5 @#'      # équivalent de --history 5
+./bin/miniai -c '#@ help @#'           # rappelle ces commandes
+```
+
+`model <tag>` accepte un tag seul (suppose `qwen2.5-coder`, ex: `3b`) ou
+`nom:tag` complet (ex: `deepseek-coder:1.3b`) pour changer de famille de
+modèle. Le changement persiste pour le reste de la session **REPL** en
+cours, mais pas en mode `-c` ou via `Ctrl-G` dans une console normale —
+chaque appel y relance un process, donc l'effet ne dépasse pas cette
+seule résolution (message rappelé dans la sortie de la commande).
+
+### Ctrl-Y : sélecteur de modèle interactif
+
+Testé et confirmé en conditions réelles : un vrai menu de sélection
+(flèches, filtre en tapant) est possible dans le contexte `bind -x`, à
+condition d'utiliser un outil qui gère lui-même le terminal en bas
+niveau plutôt que le `read` de bash (qui, lui, échoue dans ce contexte —
+voir section 7). [`fzf`](https://github.com/junegunn/fzf) est cet outil,
+et c'est exactement ce que des intégrations bash connues (recherche
+d'historique `Ctrl-R`, etc.) utilisent déjà avec succès.
+
+```bash
+sudo apt install fzf
+```
+
+Ensuite, dans une console où `shell-integration/miniai.bash` est
+sourcé, `Ctrl-Y` ouvre la liste de tous les modèles Ollama présents
+(`miniai --list-models` en coulisses, piped dans `fzf`). Le choix
+devient actif pour le reste de la session de terminal — `export
+MINIAI_MODEL_NAME`/`MINIAI_MODEL_TAG` est fait directement dans le shell
+courant (pas dans un sous-processus), donc ça persiste vraiment,
+contrairement à `#@ model <tag> @#`. Sans `fzf` installé, `Ctrl-Y`
+affiche un message l'indiquant au lieu d'échouer silencieusement.
+
+`Ctrl-Y` écrase la liaison readline par défaut `yank` (coller le
+dernier texte supprimé avec Ctrl-K/Ctrl-U) — change la touche dans
+`shell-integration/miniai.bash` (`bind -x '"\C-y": miniai_pick_model'`)
+si tu t'en sers.
+
+## 10. Le code : qui fait quoi
 
 ```text
 bin/miniai                 point d'entrée bash du REPL
 bin/miniai-resolve-inline  point d'entrée bash pour le Ctrl-G "natif" dans ta console
 shell-integration/
-  miniai.bash              fonction bash + `bind -x "\C-g"`, à sourcer dans ~/.bashrc
+  miniai.bash              bind -x "\C-g" (résolution) + "\C-y" (fzf), à sourcer
 src/miniai/
-  cli.py                   REPL (prompt_toolkit), mode -c / --history, argparse
+  cli.py                   REPL (prompt_toolkit), -c / --history / --list-models
   inline.py                résolution ponctuelle appelée par bin/miniai-resolve-inline
   tags.py                  regex #@ ... @#, expand_line(), resolve_pending_tag()
-  llm.py                   modèle GGUF, prompt, dispatch fragment bash / script
+  llm.py                   modèle GGUF, prompt, dispatch fragment/script, liste modèles
+  commands.py              commandes utilitaires (models, model, history, help)
   history.py               journal JSONL des résolutions (~/.miniai/history.jsonl)
   context.py               aperçu des fichiers mentionnés, injecté dans le prompt caché
   shell.py                 session bash persistante (subprocess + marqueur sentinel)
@@ -286,9 +337,15 @@ Le rôle précis de chaque fichier :
     un script (réponse commençant par un shebang) et l'usage du contexte
     fichier (exemple CSV avec en-tête → `csv.DictReader`).
   - `MiniLLM.generate_bash(request, prefix, suffix, confirm=None)` —
-    charge le modèle au premier appel (lazy), appelle
-    `context.build_context(request)` puis construit le prompt, appelle
-    `llama_cpp.Llama(...)`. Détermine le texte à afficher/utiliser (script
+    vérifie d'abord `commands.try_builtin(request, self)` (voir plus bas) ;
+    si reconnu, court-circuite tout le reste (pas de modèle chargé, pas
+    de `confirm`, résultat enveloppé en script d'affichage via
+    `_as_display_script()` + `_write_script()`, journalisé avec
+    `kind="builtin"`). Sinon, charge le modèle au premier appel (lazy),
+    appelle `context.build_context(request)` puis construit le prompt,
+    appelle `llama_cpp.Llama(...)` (avec `repeat_penalty=1.1` — voir
+    "Limites connues" dans le README pour le bug de répétition dégénérée
+    que ça corrige). Détermine le texte à afficher/utiliser (script
     entier si la réponse commence par `#!`, sinon sa première ligne). Si
     `confirm` est fourni, l'appelle avec ce texte ; un retour faux lève
     `ResolutionCancelled` (rien n'est écrit ni journalisé). Sinon, écrit le
@@ -296,6 +353,19 @@ Le rôle précis de chaque fichier :
     et journalise le résultat via `history.log_event()`.
   - `ResolutionCancelled` — exception levée quand `confirm` refuse ;
     attrapée par `cli.py`/`inline.py` pour laisser la ligne inchangée.
+  - `list_local_models()` — parcourt `_KNOWN_OLLAMA_DIRS` et liste tous
+    les `(nom, tag)` dont un manifest existe, sans filtrer par
+    compatibilité (utilisé par `commands.py` et `cli.py --list-models`).
+  - `MiniLLM.switch_model(model=None, tag=None, path=None)` — recharge
+    `self.model_path` via `discover_gguf_path()` (ou un chemin direct) et
+    vide `self._llm` pour forcer un rechargement lazy au prochain appel.
+- **`src/miniai/commands.py`** — `try_builtin(request, mini_llm)` :
+  reconnaît `models`, `model <tag>`, `history [N]`, `help` (insensible à
+  la casse) et retourne le texte à afficher, ou `None` si `request` n'est
+  pas une commande connue (le flux normal vers le LLM reprend alors).
+  Volontairement du texte pur, jamais de picker interactif à navigation
+  clavier ici — voir section 9 pour pourquoi (et où ce picker existe
+  quand même, côté bash, via `fzf`).
 - **`src/miniai/history.py`** — `log_event(...)` ajoute une ligne JSON à
   `~/.miniai/history.jsonl` (ou `MINIAI_HISTORY_PATH`) ; `read_events(limit)`
   relit les dernières entrées, utilisé par `cli.py --history`.
@@ -347,7 +417,7 @@ Le rôle précis de chaque fichier :
   Ctrl-C). Piège documenté de bash, pas un bug miniai, mais pas assez
   fiable pour en dépendre.
 
-## 10. Configuration
+## 11. Configuration
 
 Tout se fait par variables d'environnement, pas de fichier de config :
 
@@ -385,13 +455,14 @@ Installées dans `.venv/` (voir étape 2), pas au niveau système — la
 machine est en environnement Python "externally managed" (Debian/Ubuntu),
 d'où le `python3 -m venv .venv` plutôt qu'un `pip install` direct.
 
-## 11. Dépannage rapide
+## 12. Dépannage rapide
 
 | Symptôme | Cause probable | Action |
 | --- | --- | --- |
-| `FileNotFoundError: GGUF introuvable` | modèle non trouvé | voir étape 3 / section 9 |
+| `FileNotFoundError: GGUF introuvable` | modèle non trouvé | voir étape 3 / section 11 |
 | Réponse lente au premier appel | chargement du modèle | normal, ~2-4s |
 | Ligne exécutée bizarre après résolution | modèle 1.5B + prompt minimal | voir "Limite connue" dans le README |
 | `ModuleNotFoundError: llama_cpp` | venv pas utilisé | vérifier que `.venv/bin/python` existe et que `bin/miniai` le détecte |
 | `Ctrl-G` ne fait rien dans mon terminal | `shell-integration/miniai.bash` pas sourcé | vérifier `~/.bashrc`, ouvrir un nouveau terminal |
 | `#@ ... @#` exécuté tel quel / ignoré silencieusement | Entrée pressée sans passer par `Ctrl-G` d'abord | toujours résoudre avec `Ctrl-G` avant Entrée (voir section 7) |
+| `Ctrl-Y` affiche juste un message, pas de liste | `fzf` non installé | `sudo apt install fzf` (voir section 9) |

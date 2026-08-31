@@ -116,6 +116,17 @@ def print_history(limit: int) -> int:
     return 0
 
 
+def print_models() -> int:
+    """One "name:tag" per line, plain — meant for piping (e.g. into
+    fzf, see shell-integration/miniai.bash's model picker), as well as
+    for direct use."""
+    from .llm import list_local_models
+
+    for name, tag in list_local_models():
+        print(f"{name}:{tag}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="miniai",
@@ -138,6 +149,11 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="N",
         help="Affiche les N dernières résolutions (défaut 20) puis quitte.",
     )
+    parser.add_argument(
+        "--list-models",
+        action="store_true",
+        help="Liste les modèles Ollama disponibles (une ligne 'nom:tag' par modèle) puis quitte.",
+    )
     return parser
 
 
@@ -147,6 +163,9 @@ def main(argv=None) -> int:
 
     if args.history is not None:
         return print_history(args.history)
+
+    if args.list_models:
+        return print_models()
 
     llm = MiniLLM()
 

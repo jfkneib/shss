@@ -89,6 +89,25 @@ Ligne: {prefix}█{suffix}
 Réponse:"""
 
 
+def _read_manifest_blob(models_dir, model, tag):
+    """Return the GGUF blob path for `model:tag` in `models_dir`'s Ollama
+    manifest tree, or None if there's no such manifest/blob there."""
+    manifest_path = (
+        Path(models_dir) / "manifests" / "registry.ollama.ai" / "library" / model / tag
+    )
+    if not manifest_path.is_file():
+        return None
+
+    manifest = json.loads(manifest_path.read_text())
+    for layer in manifest.get("layers", []):
+        if layer.get("mediaType") == "application/vnd.ollama.image.model":
+            digest = layer["digest"].replace(":", "-", 1)
+            blob_path = Path(models_dir) / "blobs" / digest
+            if blob_path.is_file():
+                return str(blob_path)
+    return None
+
+
 def discover_gguf_path(model=MODEL_NAME, tag=MODEL_TAG):
     """Locate the raw GGUF blob already pulled by Ollama for `model:tag`,
     without going through the Ollama server/CLI at runtime."""
@@ -99,24 +118,9 @@ def discover_gguf_path(model=MODEL_NAME, tag=MODEL_TAG):
     for models_dir in _KNOWN_OLLAMA_DIRS:
         if not models_dir:
             continue
-        manifest_path = (
-            Path(models_dir)
-            / "manifests"
-            / "registry.ollama.ai"
-            / "library"
-            / model
-            / tag
-        )
-        if not manifest_path.is_file():
-            continue
-
-        manifest = json.loads(manifest_path.read_text())
-        for layer in manifest.get("layers", []):
-            if layer.get("mediaType") == "application/vnd.ollama.image.model":
-                digest = layer["digest"].replace(":", "-", 1)
-                blob_path = Path(models_dir) / "blobs" / digest
-                if blob_path.is_file():
-                    return str(blob_path)
+        blob = _read_manifest_blob(models_dir, model, tag)
+        if blob:
+            return blob
 
     if Path(SYSTEM_MODEL_PATH).is_file():
         return SYSTEM_MODEL_PATH
@@ -128,6 +132,27 @@ def discover_gguf_path(model=MODEL_NAME, tag=MODEL_TAG):
     )
 
 
+def list_local_models():
+    """List every (name, tag) whose manifest exists in any known Ollama
+    models directory — every model discover_gguf_path() could resolve
+    to, for any name/tag, deduplicated and sorted."""
+    seen = set()
+    results = []
+    for models_dir in _KNOWN_OLLAMA_DIRS:
+        if not models_dir:
+            continue
+        library = Path(models_dir) / "manifests" / "registry.ollama.ai" / "library"
+        if not library.is_dir():
+            continue
+        for name_dir in sorted(p for p in library.iterdir() if p.is_dir()):
+            for tag_file in sorted(p for p in name_dir.iterdir() if p.is_file()):
+                key = (name_dir.name, tag_file.name)
+                if key not in seen:
+                    seen.add(key)
+                    results.append(key)
+    return results
+
+
 class ResolutionCancelled(Exception):
     """Raised when a `confirm` callback declines a generated result."""
 
@@ -137,6 +162,14 @@ def _script_extension(shebang_line: str) -> str:
         if keyword in shebang_line:
             return ext
     return ".sh"
+
+
+def _as_display_script(text: str) -> str:
+    """Wrap plain text (e.g. a builtin command's output) as a tiny bash
+    script that just prints it via a quoted heredoc — safe regardless of
+    quotes/`$`/backticks in the text, since nothing inside a
+    single-quoted heredoc delimiter is expanded."""
+    return "#!/usr/bin/env bash\ncat <<'MINIAI_EOF'\n" + text + "\nMINIAI_EOF\n"
 
 
 def _write_script(text: str) -> str:
@@ -167,6 +200,17 @@ class MiniLLM:
                 verbose=False,
             )
 
+    def switch_model(self, model=None, tag=None, path=None):
+        """Point this instance at a different GGUF, reloaded lazily on
+        the next generate_bash() call. Persists for the rest of this
+        process's life (the REPL's whole session; a single resolution
+        in -c / the bashrc Ctrl-G integration, which start a fresh
+        process each time)."""
+        new_path = path or discover_gguf_path(model=model or MODEL_NAME, tag=tag or MODEL_TAG)
+        self.model_path = new_path
+        self._llm = None
+        return new_path
+
     def generate_bash(
         self, request: str, prefix: str = "", suffix: str = "", confirm=None
     ) -> str:
@@ -179,9 +223,23 @@ class MiniLLM:
         entry). Used to let the caller show a "utiliser ce résultat ?"
         prompt for Ctrl-G, without slowing down the plain Enter-driven
         resolution path (which never passes `confirm`).
+
+        `request` is checked against built-in commands (see commands.py)
+        first — "models", "model <tag>", "history [N]", "help" — which
+        never touch the LLM at all and never ask for confirmation
+        (deterministic, instant, nothing to review).
         """
-        self._ensure_loaded()
         request = request.strip()
+
+        from .commands import try_builtin
+
+        builtin_output = try_builtin(request, self)
+        if builtin_output is not None:
+            result = _write_script(_as_display_script(builtin_output))
+            log_event(request, prefix, suffix, result, "builtin")
+            return result
+
+        self._ensure_loaded()
         context = build_context(request)
         prompt = FEW_SHOT.format(request=request, prefix=prefix, suffix=suffix, context=context)
         out = self._llm(

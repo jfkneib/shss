@@ -5,12 +5,15 @@ Priority: optional
 Architecture: all
 Maintainer: Jean-Francois Kneib <kneib.jean-francois@cegetel.net>
 Depends: python3 (>= 3.9), python3-venv, python3-pip, curl, ca-certificates
+Recommends: fzf
 Description: console bash augmentee par un petit LLM local
  miniai resout, dans une ligne de bash, tout bloc "#@ demande @#" en
  l'envoyant a un petit LLM local (qwen2.5-coder:1.5b-base, GGUF, charge
  directement via llama-cpp-python, sans serveur Ollama) et remplace la
  balise en place par le fragment bash genere avant execution.
  .
- Fournit un REPL (miniai), un mode one-shot (miniai -c), et une
- integration Ctrl-G directement dans une console bash normale via
- shell-integration/miniai.bash.
+ Fournit un REPL (miniai), un mode one-shot (miniai -c), une integration
+ Ctrl-G directement dans une console bash normale via
+ shell-integration/miniai.bash, des commandes utilitaires (models,
+ model, history, help), et un selecteur de modele interactif (Ctrl-Y,
+ necessite fzf).

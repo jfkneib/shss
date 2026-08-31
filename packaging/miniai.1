@@ -9,6 +9,9 @@ miniai \- console bash augmentée par un petit LLM local, via des balises #@ ...
 [\fB\-\-history\fR [\fIN\fR]]
 .br
 .B miniai
+\fB\-\-list\-models\fR
+.br
+.B miniai
 \fB\-\-version\fR
 .SH DESCRIPTION
 .B miniai
@@ -41,8 +44,30 @@ lancer le REPL.
 Affiche les \fIN\fR dernières résolutions de l'historique (défaut 20)
 puis quitte, sans charger le modèle. Voir \fBHISTORIQUE ET SCRIPTS\fR.
 .TP
+.B \-\-list\-models
+Affiche, une par ligne au format \fInom:tag\fR, la liste des modèles
+Ollama présents sur la machine, puis quitte sans charger de modèle.
+Voir \fBCOMMANDES UTILITAIRES\fR.
+.TP
 .B \-\-version
 Affiche la version de miniai et quitte.
+.SH COMMANDES UTILITAIRES
+Certaines demandes entre \fB#@ ... @#\fR sont reconnues et traitées
+directement par miniai, sans jamais appeler le LLM (instantané) :
+.PP
+.RS
+.nf
+#@ models @#         liste les modeles disponibles, indique l'actif
+#@ model <tag> @#    change de modele (ex: 3b, ou deepseek\-coder:1.3b)
+#@ history [N] @#    equivalent de \-\-history
+#@ help @#           rappelle ces commandes
+.fi
+.RE
+.PP
+\fBmodel <tag>\fR change le modèle pour la suite de la session
+\fBREPL\fR en cours uniquement ; en mode \fB\-c\fR ou via \fBCtrl\-G\fR
+dans une console normale, chaque appel relance un processus, donc le
+changement ne survit pas à cette seule résolution.
 .SH HISTORIQUE ET SCRIPTS
 Pour une demande trop complexe pour tenir sur une seule ligne (plusieurs
 étapes, transformation de fichier...), le modèle peut répondre par un
@@ -89,6 +114,27 @@ si la balise complète \fB#@ ... @#\fR est tapée puis validée par Entrée
 \fB#@\fR comme un commentaire (le \fB#\fR est précédé d'un espace) — la
 partie LLM est alors silencieusement ignorée, sans erreur. Il faut
 toujours résoudre avec \fBCtrl\-G\fR avant de valider.
+.SH RACCOURCI CTRL\-Y (SÉLECTEUR DE MODÈLE)
+Dans une console où \fBshell\-integration/miniai.bash\fR est sourcé,
+\fBCtrl\-Y\fR ouvre un sélecteur de modèle interactif via
+.BR fzf (1)
+(à installer séparément :
+.IR "sudo apt install fzf" ),
+avec repli sur un simple message si \fBfzf\fR est absent. Le modèle
+choisi devient actif pour le reste de la session de terminal
+(\fBexport MINIAI_MODEL_NAME\fR/\fBMINIAI_MODEL_TAG\fR dans le shell
+courant) — contrairement à \fB#@ model <tag> @#\fR, ce changement
+persiste réellement puisqu'il est fait dans le shell courant, pas dans
+un sous\-processus. \fBCtrl\-Y\fR écrase la liaison readline par défaut
+\fByank\fR (coller le dernier texte supprimé) ; change la touche dans
+\fBshell\-integration/miniai.bash\fR si tu t'en sers.
+.PP
+Un \fBread\fR de bash s'étant révélé peu fiable dans un contexte
+\fBbind \-x\fR (voir ci\-dessus), ce sélecteur a été construit sur
+.BR fzf ,
+qui gère lui\-même le terminal en bas niveau et fonctionne de façon
+fiable dans ce même contexte — vérifié en conditions réelles avant
+implémentation.
 .SH VARIABLES D'ENVIRONNEMENT
 .TP
 .B MINIAI_MODEL_PATH

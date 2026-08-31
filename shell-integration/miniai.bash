@@ -11,6 +11,15 @@
 # Tape Ctrl-G (avec ou sans le "@#" fermant) pour résoudre la demande en
 # place, directement dans ton prompt bash habituel — pas besoin de lancer
 # ./bin/miniai.
+#
+# Ctrl-Y ouvre un sélecteur de modèle interactif (via fzf, s'il est
+# installé — `sudo apt install fzf`) : le modèle choisi devient actif
+# pour le reste de cette session de terminal (export MINIAI_MODEL_NAME/
+# MINIAI_MODEL_TAG dans le shell courant, donc ça persiste vraiment,
+# contrairement à #@ model <tag> @# qui ne change qu'une résolution
+# ponctuelle). Ctrl-Y écrase la liaison readline par défaut "yank"
+# (coller le dernier texte tué) — change la touche ci-dessous si tu
+# t'en sers.
 
 _MINIAI_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 _MINIAI_RESOLVE_INLINE="$_MINIAI_ROOT/bin/miniai-resolve-inline"
@@ -42,3 +51,28 @@ miniai_resolve_tag() {
 }
 
 bind -x '"\C-g": miniai_resolve_tag'
+
+miniai_pick_model() {
+    if ! command -v fzf >/dev/null 2>&1; then
+        echo
+        echo "miniai: fzf n'est pas installe (sudo apt install fzf) -- pas de selecteur interactif."
+        echo "miniai: utilise #@ models @# / #@ model <tag> @# en attendant."
+        return
+    fi
+
+    local choice name tag
+    choice=$("$_MINIAI_ROOT/bin/miniai" --list-models | fzf --prompt="miniai modele > " --height=40% --reverse)
+
+    if [ -z "$choice" ]; then
+        return  # Echap ou liste vide : rien ne change
+    fi
+
+    name=${choice%%:*}
+    tag=${choice#*:}
+    export MINIAI_MODEL_NAME="$name"
+    export MINIAI_MODEL_TAG="$tag"
+    echo
+    echo "miniai: modele actif -> $choice (pour le reste de cette session de terminal)"
+}
+
+bind -x '"\C-y": miniai_pick_model'

@@ -165,6 +165,42 @@ miniai --history 50     # les 50 dernières
 
 `--history` n'a pas besoin de charger le modèle, donc c'est instantané.
 
+## Commandes utilitaires
+
+Certaines demandes entre `#@ ... @#` sont reconnues et traitées
+directement par miniai — jamais envoyées au LLM, donc instantanées :
+
+```bash
+#@ models @#         # liste les modèles Ollama disponibles, indique l'actif
+#@ model 3b @#        # change de modèle (ex: 3b, ou deepseek-coder:1.3b)
+#@ history 10 @#       # équivalent de miniai --history 10
+#@ help @#            # rappelle ces commandes
+```
+
+`#@ model <tag> @#` change le modèle pour la suite de la session **REPL**
+en cours ; en mode `-c` ou via `Ctrl-G` dans une console normale, chaque
+appel relance un process, donc le changement ne survit pas à cette seule
+résolution — exporte `MINIAI_MODEL_TAG` dans `~/.bashrc` pour un
+changement permanent, ou utilise le sélecteur `Ctrl-Y` ci-dessous, qui
+lui persiste vraiment pour toute la session de terminal.
+
+### Sélecteur de modèle interactif (Ctrl-Y)
+
+Si [`fzf`](https://github.com/junegunn/fzf) est installé
+(`sudo apt install fzf`), `Ctrl-Y` (dans une console où
+`shell-integration/miniai.bash` est sourcé) ouvre une vraie liste
+filtrable/navigable au clavier des modèles disponibles. Le choix devient
+actif pour le reste de la session de terminal (`export
+MINIAI_MODEL_NAME`/`MINIAI_MODEL_TAG` dans le shell courant).
+
+Ça n'a été possible qu'après avoir vérifié que `fzf` gère correctement
+le terminal dans un contexte `bind -x` sur cette machine — contrairement
+à un `read` de bash, qui n'y arrivait pas (voir la section précédente
+sur la confirmation `Ctrl-G` retirée pour la même raison). `Ctrl-Y`
+écrase la liaison readline par défaut (`yank`, coller le dernier texte
+supprimé) — change la touche dans `shell-integration/miniai.bash` si tu
+t'en sers.
+
 ## Limites connues
 
 `qwen2.5-coder:1.5b-base` est un petit modèle base avec un prompt few-shot
@@ -204,12 +240,13 @@ retenu après ce test.
 bin/miniai                 point d'entrée bash du REPL (utilise .venv si présent)
 bin/miniai-resolve-inline  point d'entrée pour l'intégration Ctrl-G dans bash
 shell-integration/
-  miniai.bash              à sourcer dans ~/.bashrc pour le Ctrl-G "natif"
+  miniai.bash              à sourcer dans ~/.bashrc : Ctrl-G "natif", Ctrl-Y (fzf)
 src/miniai/
-  cli.py                   REPL / mode -c / --history, raccourci clavier Ctrl-G
+  cli.py                   REPL / -c / --history / --list-models, Ctrl-G
   inline.py                résolution ponctuelle (utilisé par bin/miniai-resolve-inline)
   tags.py                  détection/remplacement des balises #@ ... @#
-  llm.py                   modèle GGUF, prompt, dispatch fragment/script
+  llm.py                   modèle GGUF, prompt, dispatch fragment/script, liste des modèles
+  commands.py              commandes utilitaires (models, model, history, help)
   history.py               journal JSONL des résolutions (~/.miniai/history.jsonl)
   context.py               aperçu des fichiers mentionnés, injecté dans le prompt caché
   shell.py                 session bash persistante (sentinel-based)
