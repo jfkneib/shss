@@ -1,3 +1,13 @@
+shss (0.2.0) unstable; urgency=low
+
+  * Nouveau modele curate `0.5b` (~506 Mo, Q8_0) : le plus leger, pour
+    machine tres contrainte ou latence minimale.
+  * Deploiement Docker (images cpu/cuda, run.sh, compose, CI GHCR).
+  * Reglage de l'inference par variables d'env : SHSS_N_GPU_LAYERS
+    (auto-detection GPU), SHSS_N_THREADS, SHSS_N_CTX.
+
+ -- Jean-Francois Kneib <kneib.jean-francois@cegetel.net>  Sun, 31 Aug 2026 15:30:00 +0200
+
 shss (0.1.0) unstable; urgency=low
 
   * Version initiale : REPL/-c avec balises #@ ... @#, integration

@@ -14,7 +14,7 @@ page de manuel) sans manipulation manuelle :
 
 ```bash
 ./packaging/build.sh
-sudo apt install ./shss_0.1.0_all.deb
+sudo apt install ./shss_0.2.0_all.deb
 ```
 
 Le paquet installe dans `/opt/shss/` (venv Python, modèle, code), les
@@ -91,7 +91,7 @@ tag `v*` : voir [.github/workflows/docker.yml](.github/workflows/docker.yml).
 | `SHSS_N_THREADS` | nombre de threads d'inférence — à mettre au nombre de cœurs **physiques** (llama.cpp devine souvent mal en conteneur) ; `run.sh` utilise `nproc` |
 | `SHSS_N_CTX` | fenêtre de contexte (défaut 2048) — `1024` suffit largement au prompt few-shot + aperçu de fichier, et réduit RAM et temps de *prompt-eval* |
 | `SHSS_N_GPU_LAYERS` | `auto` (défaut) : tout offloader si `nvidia-smi` est présent, rien sinon. Un entier force la valeur. Sans effet sur un binaire llama.cpp compilé sans CUDA (donc l'image `cpu` ignore la variable). |
-| `SHSS_MODEL_TAG` | `1.5b-base` (défaut), `3b`, `7b` — le GPU n'apporte quasi rien en 1.5b, mais devient utile en 7b |
+| `SHSS_MODEL_TAG` | `0.5b`, `1.5b-base` (défaut), `3b`, `7b` — le GPU n'apporte quasi rien sous 1.5b, mais devient utile en 7b |
 
 Pense à donner assez de ressources au conteneur : `--cpus 4` au minimum,
 et `--memory` ≥ 1,5 Go (1.5b) / 6 Go (7b).
@@ -275,10 +275,12 @@ c'est la seule famille testée/fiable avec le prompt de ce projet (voir
 #@ model 3b @#             # puis l'active (trouve le fichier déjà téléchargé)
 ```
 
-Actuellement dans la liste : `1.5b-base` (~941 Mo, le défaut), `3b`
-(~1,9 Go), `7b` (~4,5 Go). Le téléchargement est bloquant et peut prendre
-du temps selon la connexion ; il ne se déclenche **que** sur cette
-commande explicite, jamais automatiquement.
+Actuellement dans la liste : `0.5b` (~506 Mo, Q8_0), `1.5b-base`
+(~941 Mo, le défaut), `3b` (~1,9 Go), `7b` (~4,5 Go). `0.5b` est le plus
+léger (machine très contrainte, latence minimale) au prix d'une qualité
+plus faible sur les demandes composées. Le téléchargement est bloquant
+et peut prendre du temps selon la connexion ; il ne se déclenche **que**
+sur cette commande explicite, jamais automatiquement.
 
 **Stockage — partagé si possible, individuel sinon** (le fichier
 `.gguf` est partagé pour ne pas le retélécharger, mais **quel** modèle

@@ -39,6 +39,20 @@ SCRIPT_DIR = Path(tempfile.gettempdir()) / f"shss-{os.getuid()}"
 # URLs vérifiées manuellement (HEAD request) avant d'être codées en dur.
 CURATED_MODEL_FAMILY = "qwen2.5-coder"
 CURATED_MODELS = {
+    # Le plus petit : modèle *base* 0.5B (Qwen ne publie le 0.5B qu'en
+    # Instruct ; on prend la version base de bartowski, cohérente avec le
+    # prompt de complétion de FEW_SHOT). Q8_0 et non Q4_K_M : sur un
+    # modèle < 1B la quantization Q4 dégrade nettement, et Q8_0 reste
+    # ~2x plus léger que le défaut 1.5b. Qualité limitée sur les demandes
+    # composées (voir "Limites connues" du README) — pour machine très
+    # contrainte ou latence minimale.
+    "0.5b": (
+        (
+            "https://huggingface.co/bartowski/Qwen2.5-Coder-0.5B-GGUF/"
+            "resolve/main/Qwen2.5-Coder-0.5B-Q8_0.gguf"
+        ),
+        506,
+    ),
     "1.5b-base": (
         (
             "https://huggingface.co/QuantFactory/Qwen2.5-Coder-1.5B-GGUF/"
