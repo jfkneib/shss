@@ -1,0 +1,12 @@
+.git/
+.venv/
+**/__pycache__/
+**/*.pyc
+.pytest_cache/
+*.deb
+*.pdf
+dism.*
+docs/
+tests/
+packaging/
+*.gguf

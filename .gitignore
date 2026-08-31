@@ -8,3 +8,7 @@ venv/
 build/
 dist/
 *.deb
+
+# Notes personnelles hors projet
+dism.md
+dism.pdf

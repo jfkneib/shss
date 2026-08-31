@@ -29,6 +29,73 @@ l'écran en fin d'installation.
 Détails complets (contenu du paquet, scripts `postinst`/`postrm`,
 suppression) dans [packaging/](packaging/).
 
+## Installation via Docker
+
+Pour **essayer** shss sans rien installer sur l'hôte, ou pour le
+distribuer via un registre. Dans un conteneur, shss augmente le bash
+**du conteneur** (pas celui de l'hôte) : idéal pour le mode `-c` et la
+démo ; pour l'intégration `Ctrl-G` dans ton `~/.bashrc`, c'est le paquet
+`.deb` qu'il faut.
+
+Construire les images (une fois) :
+
+```bash
+docker build --target cpu  -t shss:cpu  .    # ~400 Mo sur disque, inférence CPU
+docker build --target cuda -t shss:cuda .    # base CUDA, offload GPU (--gpus all)
+```
+
+Puis, via le wrapper :
+
+```bash
+./run.sh                                 # REPL
+./run.sh -c 'ls #@ trie par taille @#'   # one-shot
+```
+
+`run.sh` monte le dossier courant sur `/work`, garde le modèle dans un
+volume `shss-models` (téléchargé une seule fois, ~941 Mo en `1.5b-base`),
+passe `--gpus all` automatiquement si un GPU NVIDIA est détecté, et fixe
+`SHSS_N_THREADS` au nombre de cœurs.
+
+Le modèle n'est **pas** dans l'image ; l'entrypoint le télécharge au
+premier lancement depuis la liste curatée de
+[`src/shss/llm.py`](src/shss/llm.py). Choisir un modèle plus gros :
+
+```bash
+SHSS_MODEL_TAG=7b ./run.sh pull   # télécharge une fois dans le volume
+SHSS_MODEL_TAG=7b ./run.sh        # puis l'utilise
+```
+
+Sans le wrapper :
+
+```bash
+docker volume create shss-models
+docker run --rm -it \
+  -v shss-models:/models -v "$PWD:/work" -w /work \
+  shss:cpu
+```
+
+L'historique des résolutions est écrit dans le volume
+(`/models/history.jsonl`), donc persistant. En revanche un résultat en
+**mode script** est écrit dans le `/tmp` du conteneur : le chemin affiché
+n'est pas accessible depuis l'hôte (limite inhérente au conteneur — le
+mode fragment sur une ligne, lui, s'exécute normalement dans `/work`).
+
+Alternative `compose` (profil `gpu` inclus) : voir
+[compose.yaml](compose.yaml). Publication automatique sur GHCR à chaque
+tag `v*` : voir [.github/workflows/docker.yml](.github/workflows/docker.yml).
+
+### Réglage des performances (variables d'env)
+
+| Variable | Effet |
+| --- | --- |
+| `SHSS_N_THREADS` | nombre de threads d'inférence — à mettre au nombre de cœurs **physiques** (llama.cpp devine souvent mal en conteneur) ; `run.sh` utilise `nproc` |
+| `SHSS_N_CTX` | fenêtre de contexte (défaut 2048) — `1024` suffit largement au prompt few-shot + aperçu de fichier, et réduit RAM et temps de *prompt-eval* |
+| `SHSS_N_GPU_LAYERS` | `auto` (défaut) : tout offloader si `nvidia-smi` est présent, rien sinon. Un entier force la valeur. Sans effet sur un binaire llama.cpp compilé sans CUDA (donc l'image `cpu` ignore la variable). |
+| `SHSS_MODEL_TAG` | `1.5b-base` (défaut), `3b`, `7b` — le GPU n'apporte quasi rien en 1.5b, mais devient utile en 7b |
+
+Pense à donner assez de ressources au conteneur : `--cpus 4` au minimum,
+et `--memory` ≥ 1,5 Go (1.5b) / 6 Go (7b).
+
 ## Utilisation (depuis un checkout git, sans paquet)
 
 ```bash

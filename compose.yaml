@@ -1,0 +1,50 @@
+# Alternative au wrapper run.sh, pour qui préfère compose.
+#
+#   docker compose build                 # construit la cible cpu
+#   docker compose run --rm shss         # REPL
+#   docker compose run --rm shss -c '...' # one-shot
+#
+# GPU (profil dédié — nécessite nvidia-container-toolkit sur l'hôte) :
+#   docker compose --profile gpu build
+#   docker compose --profile gpu run --rm shss-gpu
+
+services:
+  shss:
+    build:
+      context: .
+      target: cpu
+    image: shss:cpu
+    environment:
+      SHSS_MODEL_TAG: ${SHSS_MODEL_TAG:-1.5b-base}
+    volumes:
+      - shss-models:/models
+      - ./:/work
+    working_dir: /work
+    stdin_open: true
+    tty: true
+
+  shss-gpu:
+    profiles: ["gpu"]
+    build:
+      context: .
+      target: cuda
+    image: shss:cuda
+    environment:
+      SHSS_MODEL_TAG: ${SHSS_MODEL_TAG:-1.5b-base}
+      SHSS_N_GPU_LAYERS: "-1"
+    volumes:
+      - shss-models:/models
+      - ./:/work
+    working_dir: /work
+    stdin_open: true
+    tty: true
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: ["gpu"]
+
+volumes:
+  shss-models:
