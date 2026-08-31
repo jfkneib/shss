@@ -58,6 +58,26 @@ def test_models_marks_the_active_one(monkeypatch, tmp_path):
     assert "- qwen2.5-coder:1.5b-base" in lines
 
 
+def test_model_command_bare_shows_usage_instead_of_falling_through():
+    mini = _FakeMiniLLM()
+    out = try_builtin("model", mini)
+    assert mini.switched_to is None
+    assert "#@ model <tag> @#" in out
+
+
+def test_models_shows_active_model_even_when_not_an_ollama_one(monkeypatch, tmp_path):
+    _fake_manifests(monkeypatch, tmp_path, [("qwen2.5-coder", "1.5b-base")])
+    monkeypatch.setattr(llm_module, "_read_manifest_blob", lambda *a: None)
+
+    out = try_builtin("models", _FakeMiniLLM(model_path="/home/x/custom.gguf"))
+
+    assert "hors registre Ollama" in out
+    assert "/home/x/custom.gguf" in out
+    assert "MINIAI_MODEL_PATH" in out
+    # aucune entree Ollama ne doit etre marquee active a tort
+    assert "(actif)" not in out
+
+
 def test_model_command_switches_and_reports_it():
     mini = _FakeMiniLLM()
     out = try_builtin("model 3b", mini)

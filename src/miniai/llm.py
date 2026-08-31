@@ -2,6 +2,7 @@ import json
 import os
 import tempfile
 import time
+import urllib.request
 import uuid
 from pathlib import Path
 
@@ -28,6 +29,41 @@ SYSTEM_MODEL_PATH = "/opt/miniai/model/model.gguf"
 # complexes pour tenir sur une ligne (un par utilisateur, pour ne pas se
 # marcher dessus sur une machine partagée).
 SCRIPT_DIR = Path(tempfile.gettempdir()) / f"miniai-{os.getuid()}"
+
+# Liste curatée de modèles téléchargeables directement (sans Ollama) —
+# uniquement la famille qwen2.5-coder, seule testée/fiable avec le
+# prompt few-shot de ce fichier (voir "Limites connues" dans le README :
+# d'autres familles à taille comparable ont donné de moins bons
+# résultats avec ce même prompt). Quantization Q4_K_M pour chaque taille,
+# URLs vérifiées manuellement (HEAD request) avant d'être codées en dur.
+CURATED_MODEL_FAMILY = "qwen2.5-coder"
+CURATED_MODELS = {
+    "1.5b-base": (
+        (
+            "https://huggingface.co/QuantFactory/Qwen2.5-Coder-1.5B-GGUF/"
+            "resolve/main/Qwen2.5-Coder-1.5B.Q4_K_M.gguf"
+        ),
+        941,
+    ),
+    "3b": (
+        (
+            "https://huggingface.co/bartowski/Qwen2.5-Coder-3B-GGUF/"
+            "resolve/main/Qwen2.5-Coder-3B-Q4_K_M.gguf"
+        ),
+        1840,
+    ),
+    "7b": (
+        (
+            "https://huggingface.co/QuantFactory/Qwen2.5-Coder-7B-GGUF/"
+            "resolve/main/Qwen2.5-Coder-7B.Q4_K_M.gguf"
+        ),
+        4468,
+    ),
+}
+
+# Où vont les modèles téléchargés ainsi — par utilisateur, persistant
+# (contrairement à SCRIPT_DIR qui est dans /tmp), à côté de history.jsonl.
+MODELS_DIR = Path.home() / ".miniai" / "models"
 
 _SHEBANG_EXTENSIONS = [
     ("python", ".py"),
@@ -108,6 +144,27 @@ def _read_manifest_blob(models_dir, model, tag):
     return None
 
 
+def _discover_ollama_only(model, tag):
+    """Search only the known Ollama directories for `model:tag`, ignoring
+    MINIAI_MODEL_PATH/SYSTEM_MODEL_PATH entirely. Used by switch_model():
+    when a user explicitly names a model to switch to, honor that even
+    if MINIAI_MODEL_PATH is set — a plain discover_gguf_path() call would
+    just keep returning the override no matter what tag was asked for."""
+    for models_dir in _KNOWN_OLLAMA_DIRS:
+        if not models_dir:
+            continue
+        blob = _read_manifest_blob(models_dir, model, tag)
+        if blob:
+            return blob
+
+    raise FileNotFoundError(
+        f"GGUF introuvable pour {model}:{tag} dans les dossiers Ollama connus. "
+        "miniai ne peut changer de modele que vers un modele deja tire par Ollama "
+        f"(`ollama pull {model}:{tag}`) ; pour un .gguf ailleurs, utilise "
+        "MINIAI_MODEL_PATH directement."
+    )
+
+
 def discover_gguf_path(model=MODEL_NAME, tag=MODEL_TAG):
     """Locate the raw GGUF blob already pulled by Ollama for `model:tag`,
     without going through the Ollama server/CLI at runtime."""
@@ -115,12 +172,10 @@ def discover_gguf_path(model=MODEL_NAME, tag=MODEL_TAG):
     if override:
         return override
 
-    for models_dir in _KNOWN_OLLAMA_DIRS:
-        if not models_dir:
-            continue
-        blob = _read_manifest_blob(models_dir, model, tag)
-        if blob:
-            return blob
+    try:
+        return _discover_ollama_only(model, tag)
+    except FileNotFoundError:
+        pass
 
     if Path(SYSTEM_MODEL_PATH).is_file():
         return SYSTEM_MODEL_PATH
@@ -151,6 +206,32 @@ def list_local_models():
                     seen.add(key)
                     results.append(key)
     return results
+
+
+def curated_model_path(tag: str) -> str:
+    return str(MODELS_DIR / f"{CURATED_MODEL_FAMILY}-{tag}.gguf")
+
+
+def download_curated_model(tag: str) -> str:
+    """Download a curated qwen2.5-coder GGUF to MODELS_DIR (skipped if
+    already there) and return its path. Blocking — a multi-GB file can
+    take a while; this is only called from an explicit
+    "#@ model download <tag> @#", never automatically."""
+    if tag not in CURATED_MODELS:
+        raise KeyError(
+            f"'{tag}' n'est pas dans la liste curatée ({', '.join(CURATED_MODELS)})"
+        )
+
+    dest = Path(curated_model_path(tag))
+    if dest.is_file():
+        return str(dest)
+
+    url, _size_mb = CURATED_MODELS[tag]
+    MODELS_DIR.mkdir(parents=True, exist_ok=True)
+    tmp_dest = dest.with_name(dest.name + ".part")
+    urllib.request.urlretrieve(url, tmp_dest)
+    tmp_dest.rename(dest)
+    return str(dest)
 
 
 class ResolutionCancelled(Exception):
@@ -205,8 +286,35 @@ class MiniLLM:
         the next generate_bash() call. Persists for the rest of this
         process's life (the REPL's whole session; a single resolution
         in -c / the bashrc Ctrl-G integration, which start a fresh
-        process each time)."""
-        new_path = path or discover_gguf_path(model=model or MODEL_NAME, tag=tag or MODEL_TAG)
+        process each time).
+
+        Uses _discover_ollama_only(), not discover_gguf_path(): the
+        latter checks MINIAI_MODEL_PATH first, which would silently
+        ignore whatever model/tag was explicitly requested here and
+        keep returning the same override no matter what. Falls back to
+        an already-downloaded curated model (~/.miniai/models/, see
+        download_curated_model()) if Ollama doesn't have it — this is
+        the only way to switch models at all without Ollama installed.
+        """
+        if path:
+            new_path = path
+        else:
+            model = model or MODEL_NAME
+            tag = tag or MODEL_TAG
+            try:
+                new_path = _discover_ollama_only(model, tag)
+            except FileNotFoundError as exc:
+                curated_path = Path(curated_model_path(tag))
+                if model == CURATED_MODEL_FAMILY and curated_path.is_file():
+                    new_path = str(curated_path)
+                elif model == CURATED_MODEL_FAMILY and tag in CURATED_MODELS:
+                    size_mb = CURATED_MODELS[tag][1]
+                    raise FileNotFoundError(
+                        f"{model}:{tag} introuvable via Ollama, et pas encore téléchargé "
+                        f"(#@ model download {tag} @#, ~{size_mb} Mo)"
+                    ) from exc
+                else:
+                    raise
         self.model_path = new_path
         self._llm = None
         return new_path

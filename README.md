@@ -119,6 +119,16 @@ qu'Ollama a laissé sur disque). Sans Ollama installé, `MINIAI_MODEL_PATH`
 vers n'importe quel `.gguf` (téléchargé par exemple depuis Hugging Face)
 suffit à faire fonctionner miniai de la même façon.
 
+**Nuance pour les commandes utilitaires (section suivante) :** `#@ models @#`,
+`#@ model <tag> @#` et `Ctrl-Y` ne peuvent lister/proposer que des modèles
+**déjà gérés par Ollama** — c'est le seul « registre » de modèles
+disponible sur disque, il n'y a pas d'équivalent générique pour un
+`.gguf` isolé. Sans Ollama, `#@ models @#` l'indique clairement et
+affiche quand même le modèle réellement actif (celui pointé par
+`MINIAI_MODEL_PATH`) plutôt que de laisser croire qu'il n'y a rien de
+configuré ; pour changer de modèle dans ce cas, il faut changer
+`MINIAI_MODEL_PATH` toi-même.
+
 ## Scripts et historique
 
 Pour une demande trop complexe pour tenir sur une ligne (plusieurs
@@ -171,10 +181,11 @@ Certaines demandes entre `#@ ... @#` sont reconnues et traitées
 directement par miniai — jamais envoyées au LLM, donc instantanées :
 
 ```bash
-#@ models @#         # liste les modèles Ollama disponibles, indique l'actif
-#@ model 3b @#        # change de modèle (ex: 3b, ou deepseek-coder:1.3b)
-#@ history 10 @#       # équivalent de miniai --history 10
-#@ help @#            # rappelle ces commandes
+#@ models @#                # liste les modèles Ollama + curatés, indique l'actif
+#@ model 3b @#                # change de modèle (ex: 3b, ou deepseek-coder:1.3b)
+#@ model download 3b @#       # télécharge un modèle curaté (sans Ollama)
+#@ history 10 @#               # équivalent de miniai --history 10
+#@ help @#                     # rappelle ces commandes
 ```
 
 `#@ model <tag> @#` change le modèle pour la suite de la session **REPL**
@@ -183,6 +194,26 @@ appel relance un process, donc le changement ne survit pas à cette seule
 résolution — exporte `MINIAI_MODEL_TAG` dans `~/.bashrc` pour un
 changement permanent, ou utilise le sélecteur `Ctrl-Y` ci-dessous, qui
 lui persiste vraiment pour toute la session de terminal.
+
+### Modèles téléchargeables sans Ollama
+
+`#@ models @#` liste toujours, en plus des modèles Ollama, une liste
+**curatée** de modèles `qwen2.5-coder` téléchargeables directement
+depuis Hugging Face (URLs vérifiées à la main, quantization Q4_K_M) —
+c'est la seule famille testée/fiable avec le prompt de ce projet (voir
+"Limites connues"). C'est ce qui répond au cas "pas d'Ollama installé" :
+
+```bash
+#@ model download 3b @#   # télécharge ~1,9 Go dans ~/.miniai/models/
+#@ model 3b @#             # puis l'active (trouve le fichier déjà téléchargé)
+```
+
+Actuellement dans la liste : `1.5b-base` (~941 Mo, le défaut), `3b`
+(~1,9 Go), `7b` (~4,5 Go). Stockage : `~/.miniai/models/` (persistant,
+par utilisateur — contrairement aux scripts générés qui vont dans
+`/tmp`). Le téléchargement est bloquant et peut prendre du temps selon
+la connexion ; il ne se déclenche **que** sur cette commande explicite,
+jamais automatiquement.
 
 ### Sélecteur de modèle interactif (Ctrl-Y)
 

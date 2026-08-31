@@ -21,6 +21,107 @@ def test_discover_gguf_path_falls_back_to_system_model_path(monkeypatch, tmp_pat
     assert discover_gguf_path() == str(fake_model)
 
 
+def test_download_curated_model_rejects_unknown_tag():
+    try:
+        llm_module.download_curated_model("does-not-exist")
+        assert False, "devrait lever KeyError"
+    except KeyError:
+        pass
+
+
+def test_download_curated_model_skips_if_already_present(monkeypatch, tmp_path):
+    monkeypatch.setattr(llm_module, "MODELS_DIR", tmp_path)
+    existing = tmp_path / f"{llm_module.CURATED_MODEL_FAMILY}-3b.gguf"
+    existing.write_bytes(b"deja la")
+
+    def fail_if_called(*a, **k):
+        raise AssertionError("ne doit pas re-telecharger un fichier deja present")
+
+    monkeypatch.setattr(llm_module.urllib.request, "urlretrieve", fail_if_called)
+
+    path = llm_module.download_curated_model("3b")
+    assert path == str(existing)
+
+
+def test_download_curated_model_downloads_when_missing(monkeypatch, tmp_path):
+    monkeypatch.setattr(llm_module, "MODELS_DIR", tmp_path)
+    calls = []
+
+    def fake_urlretrieve(url, dest):
+        calls.append((url, dest))
+        Path(dest).write_bytes(b"contenu")
+
+    monkeypatch.setattr(llm_module.urllib.request, "urlretrieve", fake_urlretrieve)
+
+    path = llm_module.download_curated_model("3b")
+    assert path == str(tmp_path / f"{llm_module.CURATED_MODEL_FAMILY}-3b.gguf")
+    assert Path(path).read_bytes() == b"contenu"
+    assert len(calls) == 1
+
+
+def test_switch_model_falls_back_to_downloaded_curated_model(monkeypatch, tmp_path):
+    monkeypatch.setattr(llm_module, "_KNOWN_OLLAMA_DIRS", [])
+    monkeypatch.setattr(llm_module, "MODELS_DIR", tmp_path)
+    curated = tmp_path / f"{llm_module.CURATED_MODEL_FAMILY}-3b.gguf"
+    curated.write_bytes(b"x")
+
+    instance = llm_module.MiniLLM.__new__(llm_module.MiniLLM)
+    instance.model_path = "/whatever.gguf"
+    instance._llm = "not-none-yet"
+
+    new_path = instance.switch_model(tag="3b")
+
+    assert new_path == str(curated)
+    assert instance._llm is None
+
+
+def test_switch_model_not_found_mentions_download_command(monkeypatch, tmp_path):
+    monkeypatch.setattr(llm_module, "_KNOWN_OLLAMA_DIRS", [])
+    monkeypatch.setattr(llm_module, "MODELS_DIR", tmp_path)
+
+    instance = llm_module.MiniLLM.__new__(llm_module.MiniLLM)
+    instance.model_path = "/whatever.gguf"
+    instance._llm = None
+
+    try:
+        instance.switch_model(tag="3b")
+        assert False, "devrait lever FileNotFoundError"
+    except FileNotFoundError as exc:
+        assert "model download 3b" in str(exc)
+
+
+def test_switch_model_ignores_minaii_model_path_override(monkeypatch, tmp_path):
+    # MINIAI_MODEL_PATH doit gagner pour la resolution normale...
+    monkeypatch.setenv("MINIAI_MODEL_PATH", "/some/where/other.gguf")
+    assert discover_gguf_path() == "/some/where/other.gguf"
+
+    # ...mais switch_model() doit quand meme trouver le modele Ollama
+    # explicitement demande, pas juste re-renvoyer l'override.
+    library = tmp_path / "manifests" / "registry.ollama.ai" / "library" / "qwen2.5-coder"
+    library.mkdir(parents=True)
+    (library / "3b").write_text("{}")
+    monkeypatch.setattr(llm_module, "_KNOWN_OLLAMA_DIRS", [str(tmp_path)])
+
+    fake_blob = str(tmp_path / "blobs" / "sha256-fake3b")
+
+    def fake_read_manifest_blob(models_dir, model, tag):
+        if (model, tag) == ("qwen2.5-coder", "3b"):
+            return fake_blob
+        return None
+
+    monkeypatch.setattr(llm_module, "_read_manifest_blob", fake_read_manifest_blob)
+
+    instance = llm_module.MiniLLM.__new__(llm_module.MiniLLM)
+    instance.model_path = "/some/where/other.gguf"
+    instance._llm = "not-none-yet"
+
+    new_path = instance.switch_model(tag="3b")
+
+    assert new_path == fake_blob
+    assert instance.model_path == fake_blob
+    assert instance._llm is None
+
+
 class _FakeLlama:
     def __init__(self, text):
         self.text = text

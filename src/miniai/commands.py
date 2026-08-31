@@ -9,15 +9,18 @@ commands work identically in the REPL, -c mode, and the bashrc Ctrl-G
 integration because they're just text — see try_builtin().
 """
 
+from pathlib import Path
+
 from . import llm as llm_module
 from .history import read_events
 
 HELP_TEXT = """Commandes utilitaires miniai (traitees directement, sans appeler le LLM) :
-  #@ models @#        liste les modeles Ollama disponibles sur cette machine
-  #@ model <tag> @#   change de modele pour la suite de cette session
-                       (ex: model 3b, ou model deepseek-coder:1.3b)
-  #@ history [N] @#   affiche les N dernieres resolutions (defaut 20)
-  #@ help @#          affiche cette aide"""
+  #@ models @#             liste les modeles Ollama + curates disponibles
+  #@ model <tag> @#        change de modele pour la suite de cette session
+                            (ex: model 3b, ou model deepseek-coder:1.3b)
+  #@ model download <tag> @#  telecharge un modele curate (sans Ollama)
+  #@ history [N] @#        affiche les N dernieres resolutions (defaut 20)
+  #@ help @#               affiche cette aide"""
 
 
 def _current_name_tag(mini_llm):
@@ -34,19 +37,67 @@ def _current_name_tag(mini_llm):
 
 
 def _format_models_list(mini_llm) -> str:
+    # Ollama n'est pas requis pour miniai (voir README) : un fichier .gguf
+    # pointe directement via MINIAI_MODEL_PATH marche tout aussi bien,
+    # sans qu'Ollama soit installe. Cette commande ne peut lister QUE les
+    # modeles geres par Ollama (c'est le seul "registre" disponible sur
+    # disque) -- donc toujours montrer le modele reellement actif, meme
+    # quand ce n'en est pas un, plutot que de laisser croire qu'il n'y a
+    # rien de configure.
     models = llm_module.list_local_models()
-    if not models:
-        return "Aucun modele Ollama trouve sur cette machine."
-
     current_name, current_tag = _current_name_tag(mini_llm)
 
-    lines = ["Modeles Ollama disponibles :"]
-    for name, tag in models:
-        marker = " (actif)" if (name, tag) == (current_name, current_tag) else ""
-        lines.append(f"  - {name}:{tag}{marker}")
+    lines = []
+    if models:
+        lines.append("Modeles Ollama disponibles :")
+        for name, tag in models:
+            marker = " (actif)" if (name, tag) == (current_name, current_tag) else ""
+            lines.append(f"  - {name}:{tag}{marker}")
+        lines.append("")
+    else:
+        lines.append("Aucun modele Ollama trouve sur cette machine.")
+        lines.append("")
+
+    if current_name is None:
+        lines.append(f"Modele actif (hors registre Ollama) : {mini_llm.model_path}")
+        lines.append(
+            "Pour changer : export MINIAI_MODEL_PATH=/chemin/vers/autre.gguf, "
+            "ou utilise un modele curate ci-dessous."
+        )
+    else:
+        lines.append("Pour changer : #@ model <tag> @#  (ex: #@ model 3b @#)")
+
     lines.append("")
-    lines.append("Pour changer : #@ model <tag> @#  (ex: #@ model 3b @#)")
+    lines.append(
+        f"Modeles curates telechargeables sans Ollama ({llm_module.CURATED_MODEL_FAMILY}) :"
+    )
+    for tag, (_url, size_mb) in llm_module.CURATED_MODELS.items():
+        downloaded = Path(llm_module.curated_model_path(tag)).is_file()
+        status = "deja telecharge" if downloaded else f"~{size_mb} Mo"
+        lines.append(f"  - {tag} ({status})")
+    lines.append(
+        "Pour telecharger : #@ model download <tag> @#  (ex: #@ model download 3b @#)"
+    )
+
     return "\n".join(lines)
+
+
+def _format_download_model(tag: str) -> str:
+    if tag not in llm_module.CURATED_MODELS:
+        options = ", ".join(llm_module.CURATED_MODELS)
+        return f"miniai: '{tag}' n'est pas dans la liste curatee ({options})"
+
+    already = Path(llm_module.curated_model_path(tag)).is_file()
+    if already:
+        return f"miniai: deja telecharge -> {llm_module.curated_model_path(tag)}"
+
+    _url, size_mb = llm_module.CURATED_MODELS[tag]
+    try:
+        path = llm_module.download_curated_model(tag)
+    except OSError as exc:
+        return f"miniai: echec du telechargement (~{size_mb} Mo attendus) -- {exc}"
+
+    return f"miniai: modele telecharge -> {path}\nUtilise #@ model {tag} @# pour l'activer."
 
 
 def _format_switch_model(mini_llm, target: str) -> str:
@@ -87,6 +138,15 @@ def try_builtin(request: str, mini_llm):
 
     if lower in ("models", "modeles", "modèles"):
         return _format_models_list(mini_llm)
+
+    if lower == "model":
+        return (
+            "miniai: precise un tag -- #@ model <tag> @#  (ex: #@ model 3b @#)\n"
+            "Voir aussi #@ models @# pour la liste, ou Ctrl-Y pour un selecteur interactif."
+        )
+
+    if lower.startswith("model download "):
+        return _format_download_model(cmd[len("model download "):].strip())
 
     if lower.startswith("model "):
         return _format_switch_model(mini_llm, cmd[len("model "):].strip())

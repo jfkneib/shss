@@ -250,10 +250,11 @@ directement par miniai — jamais envoyées au LLM, donc instantanées
 chargement du modèle) :
 
 ```bash
-./bin/miniai -c '#@ models @#'        # liste les modèles, indique l'actif
-./bin/miniai -c '#@ model 3b @#'       # change de modèle
-./bin/miniai -c '#@ history 5 @#'      # équivalent de --history 5
-./bin/miniai -c '#@ help @#'           # rappelle ces commandes
+./bin/miniai -c '#@ models @#'                # liste les modèles, indique l'actif
+./bin/miniai -c '#@ model 3b @#'               # change de modèle
+./bin/miniai -c '#@ model download 3b @#'      # télécharge un modèle curaté
+./bin/miniai -c '#@ history 5 @#'              # équivalent de --history 5
+./bin/miniai -c '#@ help @#'                   # rappelle ces commandes
 ```
 
 `model <tag>` accepte un tag seul (suppose `qwen2.5-coder`, ex: `3b`) ou
@@ -262,6 +263,37 @@ modèle. Le changement persiste pour le reste de la session **REPL** en
 cours, mais pas en mode `-c` ou via `Ctrl-G` dans une console normale —
 chaque appel y relance un process, donc l'effet ne dépasse pas cette
 seule résolution (message rappelé dans la sortie de la commande).
+
+### Modèles curatés, téléchargeables sans Ollama
+
+`#@ models @#` liste toujours, en plus des modèles Ollama, une petite
+liste **curatée** de `qwen2.5-coder` (seule famille testée avec le
+prompt de ce projet) téléchargeables directement depuis Hugging Face —
+URLs vérifiées à la main avant d'être codées en dur, quantization
+Q4_K_M :
+
+| tag | taille |
+| --- | --- |
+| `1.5b-base` | ~941 Mo (le défaut) |
+| `3b` | ~1,9 Go |
+| `7b` | ~4,5 Go |
+
+```bash
+./bin/miniai -c '#@ model download 3b @#'   # télécharge dans ~/.miniai/models/
+./bin/miniai -c '#@ model 3b @#'             # puis l'active (trouve le fichier)
+```
+
+Testé en réel (`1.5b-base`, ~941 Mo) : le téléchargement fonctionne, le
+fichier est bien retrouvé et activé ensuite via `#@ model 1.5b-base @#`.
+Bloquant (peut prendre du temps selon la connexion), et ne se déclenche
+**que** sur cette commande explicite — jamais automatiquement, y
+compris via `#@ model <tag> @#` sur un modèle non téléchargé (qui
+indique juste la commande à taper plutôt que de télécharger tout seul).
+
+C'est la réponse au cas "pas d'Ollama installé" : sans lui, `models` /
+`model <tag>` seuls ne peuvent rien proposer d'autre qu'indiquer le
+modèle réellement actif (`MINIAI_MODEL_PATH`) — voir "Nuance" dans le
+README, section Modèle LLM.
 
 ### Ctrl-Y : sélecteur de modèle interactif
 
