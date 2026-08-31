@@ -14,7 +14,7 @@ page de manuel) sans manipulation manuelle :
 
 ```bash
 ./packaging/build.sh
-sudo apt install ./shss_0.2.0_all.deb
+sudo apt install ./shss_0.2.1_all.deb
 ```
 
 Le paquet installe dans `/opt/shss/` (venv Python, modèle, code), les
@@ -266,13 +266,22 @@ lui persiste vraiment pour toute la session de terminal.
 
 `#@ models @#` liste toujours, en plus des modèles Ollama, une liste
 **curatée** de modèles `qwen2.5-coder` téléchargeables directement
-depuis Hugging Face (URLs vérifiées à la main, quantization Q4_K_M) —
-c'est la seule famille testée/fiable avec le prompt de ce projet (voir
-"Limites connues"). C'est ce qui répond au cas "pas d'Ollama installé" :
+depuis Hugging Face (URLs vérifiées à la main, Q4_K_M, sauf `0.5b` en
+Q8_0) — c'est la seule famille testée/fiable avec le prompt de ce projet
+(voir "Limites connues"). C'est ce qui répond au cas "pas d'Ollama
+installé" :
 
 ```bash
 #@ model download 3b @#   # télécharge ~1,9 Go
-#@ model 3b @#             # puis l'active (trouve le fichier déjà téléchargé)
+#@ model 3b @#             # l'active pour la session REPL en cours
+```
+
+Pour l'activer **en permanence** (y compris en mode `-c` et via
+`Ctrl-G`), une fois le fichier téléchargé :
+
+```bash
+export SHSS_MODEL_TAG=3b   # dans ~/.bashrc ; discover_gguf_path() trouve
+                           # le modèle curaté déjà téléchargé
 ```
 
 Actuellement dans la liste : `0.5b` (~506 Mo, Q8_0), `1.5b-base`

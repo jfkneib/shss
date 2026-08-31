@@ -21,6 +21,31 @@ def test_discover_gguf_path_falls_back_to_system_model_path(monkeypatch, tmp_pat
     assert discover_gguf_path() == str(fake_model)
 
 
+def test_discover_gguf_path_falls_back_to_downloaded_curated_model(monkeypatch, tmp_path):
+    monkeypatch.delenv("SHSS_MODEL_PATH", raising=False)
+    monkeypatch.setattr(llm_module, "_KNOWN_OLLAMA_DIRS", [])
+    monkeypatch.setattr(llm_module, "SYSTEM_MODEL_PATH", str(tmp_path / "absent.gguf"))
+    monkeypatch.setattr(llm_module, "SYSTEM_MODELS_DIR", tmp_path / "system")
+    monkeypatch.setattr(llm_module, "MODELS_DIR", tmp_path / "user")
+    (tmp_path / "user").mkdir()
+    curated = tmp_path / "user" / f"{llm_module.CURATED_MODEL_FAMILY}-0.5b.gguf"
+    curated.write_bytes(b"")
+
+    assert discover_gguf_path(tag="0.5b") == str(curated)
+
+
+def test_discover_gguf_path_prefers_system_model_over_absent_curated(monkeypatch, tmp_path):
+    monkeypatch.delenv("SHSS_MODEL_PATH", raising=False)
+    monkeypatch.setattr(llm_module, "_KNOWN_OLLAMA_DIRS", [])
+    monkeypatch.setattr(llm_module, "SYSTEM_MODELS_DIR", tmp_path / "system")
+    monkeypatch.setattr(llm_module, "MODELS_DIR", tmp_path / "user")
+    system_model = tmp_path / "model.gguf"
+    system_model.write_bytes(b"")
+    monkeypatch.setattr(llm_module, "SYSTEM_MODEL_PATH", str(system_model))
+
+    assert discover_gguf_path(tag="0.5b") == str(system_model)
+
+
 def test_download_curated_model_rejects_unknown_tag():
     try:
         llm_module.download_curated_model("does-not-exist")

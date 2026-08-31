@@ -59,6 +59,11 @@ CMD []
 # ---------------------------------------------------------------------------
 FROM nvidia/cuda:12.4.1-devel-ubuntu22.04 AS build-cuda
 
+# Turing (75, RTX 20xx / T4), Ampere (86, RTX 30xx), Ada (89, RTX 40xx).
+# Sans ça llama.cpp compile pour toutes les archs -> build > 1 h.
+# Surcharger au besoin : --build-arg CUDA_ARCHITECTURES="86".
+ARG CUDA_ARCHITECTURES="75;86;89"
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
         python3 python3-venv python3-pip build-essential cmake git \
     && rm -rf /var/lib/apt/lists/*
@@ -66,7 +71,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ENV PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1
 RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH" \
-    CMAKE_ARGS="-DGGML_CUDA=on"
+    CMAKE_ARGS="-DGGML_CUDA=on -DCMAKE_CUDA_ARCHITECTURES=${CUDA_ARCHITECTURES}"
 
 COPY requirements.txt .
 RUN pip install -r requirements.txt

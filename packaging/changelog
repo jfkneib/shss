@@ -1,3 +1,13 @@
+shss (0.2.1) unstable; urgency=low
+
+  * discover_gguf_path() retombe sur un modele curate deja telecharge :
+    `export SHSS_MODEL_TAG=0.5b` suffit maintenant aussi en mode -c et
+    via Ctrl-G, plus seulement dans le REPL.
+  * Build image CUDA limite a quelques architectures GPU (75;86;89)
+    au lieu de toutes -> build ~15 min au lieu de > 1 h.
+
+ -- Jean-Francois Kneib <kneib.jean-francois@cegetel.net>  Sun, 31 Aug 2026 16:45:00 +0200
+
 shss (0.2.0) unstable; urgency=low
 
   * Nouveau modele curate `0.5b` (~506 Mo, Q8_0) : le plus leger, pour

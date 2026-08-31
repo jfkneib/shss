@@ -200,6 +200,15 @@ def discover_gguf_path(model=MODEL_NAME, tag=MODEL_TAG):
     except FileNotFoundError:
         pass
 
+    # Un modèle curaté explicitement demandé via SHSS_MODEL_TAG et déjà
+    # téléchargé (`#@ model download <tag> @#`) : le préférer au modèle
+    # système, qui lui reste figé sur le défaut. C'est ce qui permet à
+    # `export SHSS_MODEL_TAG=0.5b` de suffire aussi en mode -c / Ctrl-G,
+    # et pas seulement via `#@ model <tag> @#` dans le REPL.
+    curated = curated_model_path(tag)
+    if Path(curated).is_file():
+        return curated
+
     if Path(SYSTEM_MODEL_PATH).is_file():
         return SYSTEM_MODEL_PATH
 
