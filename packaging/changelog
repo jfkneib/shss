@@ -1,4 +1,4 @@
-miniai (0.1.0) unstable; urgency=low
+shss (0.1.0) unstable; urgency=low
 
   * Version initiale : REPL/-c avec balises #@ ... @#, integration
     Ctrl-G dans une console bash normale, telechargement/reutilisation

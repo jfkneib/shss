@@ -3,7 +3,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from miniai.context import build_context
+from shss.context import build_context
 
 
 def test_build_context_empty_when_no_files_mentioned(tmp_path, monkeypatch):

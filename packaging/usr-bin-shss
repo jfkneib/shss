@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SHSS_ROOT=/opt/shss
+export PYTHONPATH="$SHSS_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
+
+exec "$SHSS_ROOT/.venv/bin/python" -m shss.cli "$@"

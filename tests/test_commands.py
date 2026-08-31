@@ -3,8 +3,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-import miniai.llm as llm_module
-from miniai.commands import try_builtin
+import shss.llm as llm_module
+from shss.commands import try_builtin
 
 
 class _FakeMiniLLM:
@@ -23,7 +23,7 @@ def _fake_manifests(monkeypatch, tmp_path, entries):
     """entries: list of (name, tag). Creates a fake Ollama manifest tree
     under tmp_path and points _KNOWN_OLLAMA_DIRS at it. Also isolates the
     curated-model directories from the real machine (e.g. a model
-    genuinely downloaded to ~/.miniai/models/ earlier in this session),
+    genuinely downloaded to ~/.shss/models/ earlier in this session),
     since _format_models_list() checks those too."""
     library = tmp_path / "manifests" / "registry.ollama.ai" / "library"
     for name, tag in entries:
@@ -78,7 +78,7 @@ def test_models_shows_active_model_even_when_not_an_ollama_one(monkeypatch, tmp_
 
     assert "hors registre Ollama" in out
     assert "/home/x/custom.gguf" in out
-    assert "MINIAI_MODEL_PATH" in out
+    assert "SHSS_MODEL_PATH" in out
     # aucune entree Ollama ne doit etre marquee active a tort
     assert "(actif)" not in out
 
@@ -106,9 +106,9 @@ def test_model_command_reports_missing_model_without_raising():
 
 
 def test_history_command(monkeypatch, tmp_path):
-    from miniai.history import log_event
+    from shss.history import log_event
 
-    monkeypatch.setenv("MINIAI_HISTORY_PATH", str(tmp_path / "history.jsonl"))
+    monkeypatch.setenv("SHSS_HISTORY_PATH", str(tmp_path / "history.jsonl"))
     log_event("trie par taille", "ls ", "", "-S", "inline")
 
     out = try_builtin("history", _FakeMiniLLM())
@@ -117,7 +117,7 @@ def test_history_command(monkeypatch, tmp_path):
 
 
 def test_history_command_empty(monkeypatch, tmp_path):
-    monkeypatch.setenv("MINIAI_HISTORY_PATH", str(tmp_path / "does-not-exist.jsonl"))
+    monkeypatch.setenv("SHSS_HISTORY_PATH", str(tmp_path / "does-not-exist.jsonl"))
     out = try_builtin("history", _FakeMiniLLM())
     assert "vide" in out.lower()
 

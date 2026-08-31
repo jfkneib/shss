@@ -8,8 +8,8 @@ from .tags import expand_line, resolve_pending_tag
 
 
 def ask_confirm(text: str) -> bool:
-    """Show what miniai would insert/run and ask for a yes/no."""
-    print(f"\nminiai propose :\n{text}\n")
+    """Show what shss would insert/run and ask for a yes/no."""
+    print(f"\nshss propose :\n{text}\n")
     reply = input("Utiliser ce résultat ? [O/n] ").strip().lower()
     return reply in ("", "o", "oui", "y", "yes")
 
@@ -31,7 +31,7 @@ def build_key_bindings(llm: MiniLLM):
             except ResolutionCancelled:
                 raise
             except Exception as exc:  # pragma: no cover - interactive feedback only
-                return f"<miniai llm error: {exc}>"
+                return f"<shss llm error: {exc}>"
 
         def do_resolve():
             return resolve_pending_tag(buf.text, buf.cursor_position, resolver)
@@ -61,12 +61,12 @@ def repl(llm: MiniLLM) -> int:
         try:
             return llm.generate_bash(request, prefix, suffix)
         except Exception as exc:
-            return f"echo 'miniai llm error: {exc}' 1>&2"
+            return f"echo 'shss llm error: {exc}' 1>&2"
 
     try:
         while True:
             try:
-                line = session.prompt(f"miniai:{shell.cwd()}$ ")
+                line = session.prompt(f"shss:{shell.cwd()}$ ")
             except (EOFError, KeyboardInterrupt):
                 break
 
@@ -107,7 +107,7 @@ def print_history(limit: int) -> int:
 
     events = read_events(limit)
     if not events:
-        print("miniai: historique vide")
+        print("shss: historique vide")
         return 0
 
     for e in events:
@@ -118,7 +118,7 @@ def print_history(limit: int) -> int:
 
 def print_models() -> int:
     """One "name:tag" per line, plain — meant for piping (e.g. into
-    fzf, see shell-integration/miniai.bash's model picker), as well as
+    fzf, see shell-integration/shss.bash's model picker), as well as
     for direct use."""
     from .llm import list_local_models
 
@@ -129,13 +129,13 @@ def print_models() -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="miniai",
+        prog="shss",
         description=(
             "Console bash augmentée : les blocs #@ ... @# dans une ligne "
             "sont résolus par un LLM local avant exécution."
         ),
     )
-    parser.add_argument("--version", action="version", version=f"miniai {__version__}")
+    parser.add_argument("--version", action="version", version=f"shss {__version__}")
     parser.add_argument(
         "-c",
         dest="command",

@@ -5,10 +5,10 @@ from pathlib import Path
 
 
 def _history_path() -> Path:
-    override = os.environ.get("MINIAI_HISTORY_PATH")
+    override = os.environ.get("SHSS_HISTORY_PATH")
     if override:
         return Path(override)
-    return Path.home() / ".miniai" / "history.jsonl"
+    return Path.home() / ".shss" / "history.jsonl"
 
 
 def log_event(request: str, prefix: str, suffix: str, result: str, kind: str) -> None:

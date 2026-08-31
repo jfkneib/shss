@@ -1,20 +1,20 @@
-.TH MINIAI 1 "2026-08-30" "miniai 0.1.0" "Commandes utilisateur"
+.TH SHSS 1 "2026-08-30" "shss 0.1.0" "Commandes utilisateur"
 .SH NOM
-miniai \- console bash augmentée par un petit LLM local, via des balises #@ ... @#
+shss \- console bash augmentée par un petit LLM local, via des balises #@ ... @#
 .SH SYNOPSIS
-.B miniai
+.B shss
 [\fB\-c\fR \fICOMMANDE\fR]
 .br
-.B miniai
+.B shss
 [\fB\-\-history\fR [\fIN\fR]]
 .br
-.B miniai
+.B shss
 \fB\-\-list\-models\fR
 .br
-.B miniai
+.B shss
 \fB\-\-version\fR
 .SH DESCRIPTION
-.B miniai
+.B shss
 résout, dans une ligne de bash, tout bloc
 .BR "#@ demande en langage naturel @#"
 en l'envoyant à un petit LLM local (\fBqwen2.5\-coder:1.5b\-base\fR,
@@ -25,7 +25,7 @@ ligne ; le reste de la ligne est du bash normal. La ligne complète
 s'exécute ensuite dans une session bash persistante : \fBcd\fR, variables
 d'environnement, etc. sont conservés d'un appel à l'autre.
 .PP
-Sans argument, \fBminiai\fR lance une console interactive (REPL). Avec
+Sans argument, \fBshss\fR lance une console interactive (REPL). Avec
 \fB\-c\fR, une seule ligne est résolue puis exécutée, comme \fBbash \-c\fR.
 .PP
 Plusieurs balises peuvent apparaître sur une même ligne, mélangées à du
@@ -50,10 +50,10 @@ Ollama présents sur la machine, puis quitte sans charger de modèle.
 Voir \fBCOMMANDES UTILITAIRES\fR.
 .TP
 .B \-\-version
-Affiche la version de miniai et quitte.
+Affiche la version de shss et quitte.
 .SH COMMANDES UTILITAIRES
 Certaines demandes entre \fB#@ ... @#\fR sont reconnues et traitées
-directement par miniai, sans jamais appeler le LLM (instantané) :
+directement par shss, sans jamais appeler le LLM (instantané) :
 .PP
 .RS
 .nf
@@ -72,25 +72,25 @@ changement ne survit pas à cette seule résolution.
 .PP
 \fBmodel download <tag>\fR télécharge un modèle d'une petite liste
 curatée (famille \fBqwen2.5\-coder\fR uniquement — la seule testée avec
-le prompt de miniai), pour les machines sans Ollama. Bloquant, peut
+le prompt de shss), pour les machines sans Ollama. Bloquant, peut
 prendre du temps selon la taille et la connexion ; ne se déclenche que
 sur cette commande explicite, jamais automatiquement.
 .PP
 Lancé avec \fBsudo\fR, le téléchargement va dans
-.I /opt/miniai/models/
+.I /opt/shss/models/
 — partagé par tous les utilisateurs de la machine, un seul
 téléchargement pour tout le monde. Sans \fBsudo\fR, il va dans
-.I ~/.miniai/models/
-(un utilisateur normal ne peut pas écrire dans \fB/opt/miniai/\fR).
+.I ~/.shss/models/
+(un utilisateur normal ne peut pas écrire dans \fB/opt/shss/\fR).
 \fBmodels\fR et \fBmodel <tag>\fR regardent toujours l'emplacement
 partagé en premier. Le fichier peut ainsi être partagé, mais le choix
 du modèle \fIactif\fR reste toujours individuel, par session.
 .PP
 \fBmodels\fR et \fBmodel <tag>\fR ne connaissent que les modèles déjà
 gérés par Ollama (le seul registre disponible sur disque) — Ollama
-n'est pas requis pour miniai (voir \fBFICHIERS\fR), mais sans lui ces
+n'est pas requis pour shss (voir \fBFICHIERS\fR), mais sans lui ces
 deux commandes ne peuvent rien proposer d'autre que d'indiquer le
-modèle réellement actif (\fBMINIAI_MODEL_PATH\fR) ; pour en changer
+modèle réellement actif (\fBSHSS_MODEL_PATH\fR) ; pour en changer
 dans ce cas, modifie cette variable toi\-même.
 .SH HISTORIQUE ET SCRIPTS
 Pour une demande trop complexe pour tenir sur une seule ligne (plusieurs
@@ -99,12 +99,12 @@ script complet plutôt qu'un fragment bash : sa réponse commence alors par
 une ligne shebang (\fB#!/usr/bin/env python3\fR, \fB#!/usr/bin/env
 bash\fR, ...), qui indique le langage choisi. Le script est écrit dans un
 fichier temporaire nommé par date et identifiant unique
-.RI ( "/tmp/miniai\-<uid>/AAAAMMJJ\-HHMMSS_xxxxxx.py" ", par exemple),"
+.RI ( "/tmp/shss\-<uid>/AAAAMMJJ\-HHMMSS_xxxxxx.py" ", par exemple),"
 rendu exécutable, et c'est ce chemin qui remplace la balise dans la
 ligne.
 .PP
 Chaque résolution (fragment ou script) est journalisée dans
-\fB~/.miniai/history.jsonl\fR (une ligne JSON par entrée : horodatage,
+\fB~/.shss/history.jsonl\fR (une ligne JSON par entrée : horodatage,
 demande, contexte, résultat, type). Voir l'option \fB\-\-history\fR.
 .SH RACCOURCI CTRL\-G
 Dans le REPL, \fBCtrl\-G\fR résout immédiatement la balise la plus proche
@@ -117,17 +117,17 @@ n'existe que pour \fBCtrl\-G\fR — la résolution automatique d'une balise
 fermée à l'Entrée reste directe.
 .PP
 Ce même raccourci peut être branché directement dans une console bash
-normale (sans lancer \fBminiai\fR), en ajoutant à son \fB~/.bashrc\fR :
+normale (sans lancer \fBshss\fR), en ajoutant à son \fB~/.bashrc\fR :
 .PP
 .RS
-source /opt/miniai/shell\-integration/miniai.bash
+source /opt/shss/shell\-integration/shss.bash
 .RE
 .PP
 Ici, contrairement au REPL, \fBil n'y a pas de confirmation Oui/non\fR :
 lire une réponse au clavier depuis une fonction \fBbind \-x\fR s'est
 avéré peu fiable en conditions réelles (même un \fBread\fR minimal, sans
-rapport avec miniai, ne recevait aucune touche pendant l'exécution de la
-fonction — piège documenté de bash, pas un bug miniai). \fBCtrl\-G\fR
+rapport avec shss, ne recevait aucune touche pendant l'exécution de la
+fonction — piège documenté de bash, pas un bug shss). \fBCtrl\-G\fR
 affiche donc ce qui a été généré (utile en mode script, où la ligne ne
 montre qu'un chemin de fichier) puis l'applique directement ; la ligne
 reste éditable avant Entrée, ce qui sert de vérification.
@@ -139,19 +139,19 @@ si la balise complète \fB#@ ... @#\fR est tapée puis validée par Entrée
 partie LLM est alors silencieusement ignorée, sans erreur. Il faut
 toujours résoudre avec \fBCtrl\-G\fR avant de valider.
 .SH RACCOURCI CTRL\-Y (SÉLECTEUR DE MODÈLE)
-Dans une console où \fBshell\-integration/miniai.bash\fR est sourcé,
+Dans une console où \fBshell\-integration/shss.bash\fR est sourcé,
 \fBCtrl\-Y\fR ouvre un sélecteur de modèle interactif via
 .BR fzf (1)
 (à installer séparément :
 .IR "sudo apt install fzf" ),
 avec repli sur un simple message si \fBfzf\fR est absent. Le modèle
 choisi devient actif pour le reste de la session de terminal
-(\fBexport MINIAI_MODEL_NAME\fR/\fBMINIAI_MODEL_TAG\fR dans le shell
+(\fBexport SHSS_MODEL_NAME\fR/\fBSHSS_MODEL_TAG\fR dans le shell
 courant) — contrairement à \fB#@ model <tag> @#\fR, ce changement
 persiste réellement puisqu'il est fait dans le shell courant, pas dans
 un sous\-processus. \fBCtrl\-Y\fR écrase la liaison readline par défaut
 \fByank\fR (coller le dernier texte supprimé) ; change la touche dans
-\fBshell\-integration/miniai.bash\fR si tu t'en sers.
+\fBshell\-integration/shss.bash\fR si tu t'en sers.
 .PP
 Un \fBread\fR de bash s'étant révélé peu fiable dans un contexte
 \fBbind \-x\fR (voir ci\-dessus), ce sélecteur a été construit sur
@@ -161,53 +161,53 @@ fiable dans ce même contexte — vérifié en conditions réelles avant
 implémentation.
 .SH VARIABLES D'ENVIRONNEMENT
 .TP
-.B MINIAI_MODEL_PATH
+.B SHSS_MODEL_PATH
 Force le chemin exact du fichier \fB.gguf\fR à utiliser, court\-circuite
 toute recherche automatique.
 .TP
-.B MINIAI_MODEL_NAME
-Nom du modèle Ollama à chercher si \fBMINIAI_MODEL_PATH\fR n'est pas
+.B SHSS_MODEL_NAME
+Nom du modèle Ollama à chercher si \fBSHSS_MODEL_PATH\fR n'est pas
 défini. Par défaut : \fBqwen2.5\-coder\fR.
 .TP
-.B MINIAI_MODEL_TAG
+.B SHSS_MODEL_TAG
 Tag du modèle Ollama à chercher. Par défaut : \fB1.5b\-base\fR.
 .TP
 .B OLLAMA_MODELS
 Dossier où Ollama range ses modèles, utilisé par la recherche
 automatique si présent.
 .TP
-.B MINIAI_HISTORY_PATH
+.B SHSS_HISTORY_PATH
 Chemin du fichier d'historique JSON Lines. Par défaut :
-\fB~/.miniai/history.jsonl\fR.
+\fB~/.shss/history.jsonl\fR.
 .SH FICHIERS
 .TP
-.I /opt/miniai/
-Installation de miniai (code source Python, environnement virtuel,
+.I /opt/shss/
+Installation de shss (code source Python, environnement virtuel,
 modèle, intégration shell).
 .TP
-.I /opt/miniai/model/model.gguf
+.I /opt/shss/model/model.gguf
 Modèle GGUF utilisé par défaut si aucune des variables ci\-dessus ne
 donne de résultat (réutilisé depuis Ollama si présent lors de
 l'installation du paquet, sinon téléchargé depuis Hugging Face).
 .TP
-.I /opt/miniai/shell\-integration/miniai.bash
+.I /opt/shss/shell\-integration/shss.bash
 Script à sourcer dans \fB~/.bashrc\fR pour le raccourci \fBCtrl\-G\fR
 dans une console bash normale.
 .TP
-.I /opt/miniai/models/
+.I /opt/shss/models/
 Modèles curatés téléchargés via \fBsudo ... #@ model download <tag> @#\fR
 — partagés par tous les utilisateurs de la machine.
 .TP
-.I ~/.miniai/models/
+.I ~/.shss/models/
 Modèles curatés téléchargés sans \fBsudo\fR — par utilisateur.
 .SH EXEMPLES
 .PP
 .RS
-miniai \-c 'ls #@ trie par taille @#'
+shss \-c 'ls #@ trie par taille @#'
 .RE
 .PP
 .RS
-miniai \-c '#@ affiche la date du jour @#'
+shss \-c '#@ affiche la date du jour @#'
 .RE
 .SH LIMITES CONNUES
 Le modèle utilisé (1.5 milliard de paramètres, base, prompt few\-shot
@@ -217,6 +217,6 @@ balises/exécution fonctionne dans tous les cas ; c'est la qualité de la
 génération qui varie selon la complexité de la demande.
 .SH VOIR AUSSI
 Documentation complète et architecture du code :
-.I /opt/miniai/README.md
+.I /opt/shss/README.md
 et
-.IR /opt/miniai/docs/getting\-started.md .
+.IR /opt/shss/docs/getting\-started.md .

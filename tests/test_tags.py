@@ -3,7 +3,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from miniai.tags import expand_line, find_requests, resolve_pending_tag
+from shss.tags import expand_line, find_requests, resolve_pending_tag
 
 
 def test_find_requests_single():

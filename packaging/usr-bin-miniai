@@ -1,7 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-
-MINIAI_ROOT=/opt/miniai
-export PYTHONPATH="$MINIAI_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
-
-exec "$MINIAI_ROOT/.venv/bin/python" -m miniai.cli "$@"

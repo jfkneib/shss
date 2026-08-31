@@ -9,8 +9,8 @@ from pathlib import Path
 from .context import build_context
 from .history import log_event
 
-MODEL_NAME = os.environ.get("MINIAI_MODEL_NAME", "qwen2.5-coder")
-MODEL_TAG = os.environ.get("MINIAI_MODEL_TAG", "1.5b-base")
+MODEL_NAME = os.environ.get("SHSS_MODEL_NAME", "qwen2.5-coder")
+MODEL_TAG = os.environ.get("SHSS_MODEL_TAG", "1.5b-base")
 
 _KNOWN_OLLAMA_DIRS = [
     os.environ.get("OLLAMA_MODELS"),
@@ -20,15 +20,15 @@ _KNOWN_OLLAMA_DIRS = [
 ]
 
 # Emplacement où le paquet Debian (packaging/) installe/télécharge le
-# modèle : ni un dossier Ollama, ni géré par MINIAI_MODEL_PATH, mais un
-# filet de sécurité pour que `miniai` marche tout de suite après `apt
+# modèle : ni un dossier Ollama, ni géré par SHSS_MODEL_PATH, mais un
+# filet de sécurité pour que `shss` marche tout de suite après `apt
 # install`, sans configuration.
-SYSTEM_MODEL_PATH = "/opt/miniai/model/model.gguf"
+SYSTEM_MODEL_PATH = "/opt/shss/model/model.gguf"
 
 # Dossier où sont écrits les scripts générés pour les demandes trop
 # complexes pour tenir sur une ligne (un par utilisateur, pour ne pas se
 # marcher dessus sur une machine partagée).
-SCRIPT_DIR = Path(tempfile.gettempdir()) / f"miniai-{os.getuid()}"
+SCRIPT_DIR = Path(tempfile.gettempdir()) / f"shss-{os.getuid()}"
 
 # Liste curatée de modèles téléchargeables directement (sans Ollama) —
 # uniquement la famille qwen2.5-coder, seule testée/fiable avec le
@@ -63,15 +63,15 @@ CURATED_MODELS = {
 
 # Emplacement partagé par toute la machine : un modèle téléchargé une
 # fois ici (par un admin, via `sudo`) bénéficie à tous les utilisateurs,
-# sans re-téléchargement — cohérent avec /opt/miniai/model/model.gguf du
+# sans re-téléchargement — cohérent avec /opt/shss/model/model.gguf du
 # paquet Debian. Consulté par tout le monde, mais seul root peut y écrire.
-SYSTEM_MODELS_DIR = Path("/opt/miniai/models")
+SYSTEM_MODELS_DIR = Path("/opt/shss/models")
 
 # Repli par utilisateur si le modèle n'est pas (encore) dans l'emplacement
 # partagé — c'est là qu'un utilisateur normal (sans sudo) télécharge le
 # sien. Le choix du modèle *actif* reste toujours individuel (variables
 # d'env par session) ; seul le fichier .gguf lui-même peut être partagé.
-MODELS_DIR = Path.home() / ".miniai" / "models"
+MODELS_DIR = Path.home() / ".shss" / "models"
 
 _SHEBANG_EXTENSIONS = [
     ("python", ".py"),
@@ -154,9 +154,9 @@ def _read_manifest_blob(models_dir, model, tag):
 
 def _discover_ollama_only(model, tag):
     """Search only the known Ollama directories for `model:tag`, ignoring
-    MINIAI_MODEL_PATH/SYSTEM_MODEL_PATH entirely. Used by switch_model():
+    SHSS_MODEL_PATH/SYSTEM_MODEL_PATH entirely. Used by switch_model():
     when a user explicitly names a model to switch to, honor that even
-    if MINIAI_MODEL_PATH is set — a plain discover_gguf_path() call would
+    if SHSS_MODEL_PATH is set — a plain discover_gguf_path() call would
     just keep returning the override no matter what tag was asked for."""
     for models_dir in _KNOWN_OLLAMA_DIRS:
         if not models_dir:
@@ -167,16 +167,16 @@ def _discover_ollama_only(model, tag):
 
     raise FileNotFoundError(
         f"GGUF introuvable pour {model}:{tag} dans les dossiers Ollama connus. "
-        "miniai ne peut changer de modele que vers un modele deja tire par Ollama "
+        "shss ne peut changer de modele que vers un modele deja tire par Ollama "
         f"(`ollama pull {model}:{tag}`) ; pour un .gguf ailleurs, utilise "
-        "MINIAI_MODEL_PATH directement."
+        "SHSS_MODEL_PATH directement."
     )
 
 
 def discover_gguf_path(model=MODEL_NAME, tag=MODEL_TAG):
     """Locate the raw GGUF blob already pulled by Ollama for `model:tag`,
     without going through the Ollama server/CLI at runtime."""
-    override = os.environ.get("MINIAI_MODEL_PATH")
+    override = os.environ.get("SHSS_MODEL_PATH")
     if override:
         return override
 
@@ -190,7 +190,7 @@ def discover_gguf_path(model=MODEL_NAME, tag=MODEL_TAG):
 
     raise FileNotFoundError(
         f"GGUF introuvable pour {model}:{tag}. "
-        "Définis MINIAI_MODEL_PATH vers un fichier .gguf, "
+        "Définis SHSS_MODEL_PATH vers un fichier .gguf, "
         f"ou vérifie que `ollama pull {model}:{tag}` a bien été fait."
     )
 
@@ -233,12 +233,12 @@ def download_curated_model(tag: str) -> str:
     can take a while; only called from an explicit
     "#@ model download <tag> @#", never automatically.
 
-    Run as root (e.g. `sudo miniai -c '#@ model download 3b @#'`), it
-    downloads to SYSTEM_MODELS_DIR (/opt/miniai/models/), shared by
+    Run as root (e.g. `sudo shss -c '#@ model download 3b @#'`), it
+    downloads to SYSTEM_MODELS_DIR (/opt/shss/models/), shared by
     every user on the machine — one download, everyone benefits, though
     each user still individually chooses which model is *active* for
     them. A normal user without root downloads to their own MODELS_DIR
-    instead, since they can't write to /opt/miniai/."""
+    instead, since they can't write to /opt/shss/."""
     if tag not in CURATED_MODELS:
         raise KeyError(
             f"'{tag}' n'est pas dans la liste curatée ({', '.join(CURATED_MODELS)})"
@@ -279,7 +279,7 @@ def _as_display_script(text: str) -> str:
     script that just prints it via a quoted heredoc — safe regardless of
     quotes/`$`/backticks in the text, since nothing inside a
     single-quoted heredoc delimiter is expanded."""
-    return "#!/usr/bin/env bash\ncat <<'MINIAI_EOF'\n" + text + "\nMINIAI_EOF\n"
+    return "#!/usr/bin/env bash\ncat <<'SHSS_EOF'\n" + text + "\nSHSS_EOF\n"
 
 
 def _write_script(text: str) -> str:
@@ -318,10 +318,10 @@ class MiniLLM:
         process each time).
 
         Uses _discover_ollama_only(), not discover_gguf_path(): the
-        latter checks MINIAI_MODEL_PATH first, which would silently
+        latter checks SHSS_MODEL_PATH first, which would silently
         ignore whatever model/tag was explicitly requested here and
         keep returning the same override no matter what. Falls back to
-        an already-downloaded curated model (~/.miniai/models/, see
+        an already-downloaded curated model (~/.shss/models/, see
         download_curated_model()) if Ollama doesn't have it — this is
         the only way to switch models at all without Ollama installed.
         """

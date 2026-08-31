@@ -1,17 +1,17 @@
 #!/bin/sh
 set -e
 
-MINIAI_ROOT=/opt/miniai
+SHSS_ROOT=/opt/shss
 
 case "$1" in
     remove)
-        rm -rf "$MINIAI_ROOT/.venv"
+        rm -rf "$SHSS_ROOT/.venv"
         ;;
     purge)
-        rm -rf "$MINIAI_ROOT/.venv" "$MINIAI_ROOT/model"
-        echo "miniai: la ligne 'source $MINIAI_ROOT/shell-integration/miniai.bash'"
-        echo "miniai: ajoutee a un ~/.bashrc n'est pas retiree automatiquement."
-        echo "miniai: supprime-la a la main si besoin."
+        rm -rf "$SHSS_ROOT/.venv" "$SHSS_ROOT/model"
+        echo "shss: la ligne 'source $SHSS_ROOT/shell-integration/shss.bash'"
+        echo "shss: ajoutee a un ~/.bashrc n'est pas retiree automatiquement."
+        echo "shss: supprime-la a la main si besoin."
         ;;
 esac
 

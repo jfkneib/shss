@@ -18,7 +18,7 @@ class PersistentShell:
 
     def run(self, line: str):
         """Execute one line, return (output, exit_code)."""
-        marker = f"__MINIAI_DONE_{uuid.uuid4().hex}__"
+        marker = f"__SHSS_DONE_{uuid.uuid4().hex}__"
         self.proc.stdin.write(line + "\n")
         self.proc.stdin.write(f'echo "{marker}$?"\n')
         self.proc.stdin.flush()

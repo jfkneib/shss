@@ -14,7 +14,7 @@ handler runs with the terminal left in whatever raw/non-canonical mode
 bash's readline was using, so reading interactively from this Python
 subprocess's stdin (even by hand, bypassing input()) doesn't reliably
 see keystrokes or their echo. Bash's own `read` builtin, run directly in
-shell-integration/miniai.bash, does not have that problem — so that's
+shell-integration/shss.bash, does not have that problem — so that's
 where the actual "utiliser ce résultat ?" prompt lives.
 """
 
@@ -27,7 +27,7 @@ from .tags import resolve_pending_tag
 def main(argv=None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     if len(argv) != 2:
-        print("usage: miniai-resolve-inline <line> <cursor_point>", file=sys.stderr)
+        print("usage: shss-resolve-inline <line> <cursor_point>", file=sys.stderr)
         return 2
 
     line, point = argv[0], int(argv[1])
@@ -42,7 +42,7 @@ def main(argv=None) -> int:
         try:
             return llm.generate_bash(request, prefix, suffix, confirm=record_display)
         except Exception as exc:
-            return f"<miniai llm error: {exc}>"
+            return f"<shss llm error: {exc}>"
 
     new_line, new_point = resolve_pending_tag(line, point, resolver)
 

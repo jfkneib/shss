@@ -1,10 +1,10 @@
 """Built-in utility commands recognized inside a #@ ... @# tag and
-handled directly by miniai — no LLM call, instant, deterministic.
+handled directly by shss — no LLM call, instant, deterministic.
 
 Deliberately plain text, no live/interactive picker: a menu you'd
 navigate with arrow keys would need to capture raw keystrokes, which is
 exactly what proved unreliable inside a bash `bind -x` handler (see
-shell-integration/miniai.bash and docs/getting-started.md). These
+shell-integration/shss.bash and docs/getting-started.md). These
 commands work identically in the REPL, -c mode, and the bashrc Ctrl-G
 integration because they're just text — see try_builtin().
 """
@@ -14,7 +14,7 @@ from pathlib import Path
 from . import llm as llm_module
 from .history import read_events
 
-HELP_TEXT = """Commandes utilitaires miniai (traitees directement, sans appeler le LLM) :
+HELP_TEXT = """Commandes utilitaires shss (traitees directement, sans appeler le LLM) :
   #@ models @#             liste les modeles Ollama + curates disponibles
   #@ model <tag> @#        change de modele pour la suite de cette session
                             (ex: model 3b, ou model deepseek-coder:1.3b)
@@ -26,7 +26,7 @@ HELP_TEXT = """Commandes utilitaires miniai (traitees directement, sans appeler 
 def _current_name_tag(mini_llm):
     """Best-effort (name, tag) for the model mini_llm currently points
     to, by matching its blob path against every locally known manifest.
-    Returns (None, None) if nothing matches (e.g. MINIAI_MODEL_PATH)."""
+    Returns (None, None) if nothing matches (e.g. SHSS_MODEL_PATH)."""
     for name, tag in llm_module.list_local_models():
         for models_dir in llm_module._KNOWN_OLLAMA_DIRS:
             if not models_dir:
@@ -37,8 +37,8 @@ def _current_name_tag(mini_llm):
 
 
 def _format_models_list(mini_llm) -> str:
-    # Ollama n'est pas requis pour miniai (voir README) : un fichier .gguf
-    # pointe directement via MINIAI_MODEL_PATH marche tout aussi bien,
+    # Ollama n'est pas requis pour shss (voir README) : un fichier .gguf
+    # pointe directement via SHSS_MODEL_PATH marche tout aussi bien,
     # sans qu'Ollama soit installe. Cette commande ne peut lister QUE les
     # modeles geres par Ollama (c'est le seul "registre" disponible sur
     # disque) -- donc toujours montrer le modele reellement actif, meme
@@ -61,7 +61,7 @@ def _format_models_list(mini_llm) -> str:
     if current_name is None:
         lines.append(f"Modele actif (hors registre Ollama) : {mini_llm.model_path}")
         lines.append(
-            "Pour changer : export MINIAI_MODEL_PATH=/chemin/vers/autre.gguf, "
+            "Pour changer : export SHSS_MODEL_PATH=/chemin/vers/autre.gguf, "
             "ou utilise un modele curate ci-dessous."
         )
     else:
@@ -85,19 +85,19 @@ def _format_models_list(mini_llm) -> str:
 def _format_download_model(tag: str) -> str:
     if tag not in llm_module.CURATED_MODELS:
         options = ", ".join(llm_module.CURATED_MODELS)
-        return f"miniai: '{tag}' n'est pas dans la liste curatee ({options})"
+        return f"shss: '{tag}' n'est pas dans la liste curatee ({options})"
 
     already = Path(llm_module.curated_model_path(tag)).is_file()
     if already:
-        return f"miniai: deja telecharge -> {llm_module.curated_model_path(tag)}"
+        return f"shss: deja telecharge -> {llm_module.curated_model_path(tag)}"
 
     _url, size_mb = llm_module.CURATED_MODELS[tag]
     try:
         path = llm_module.download_curated_model(tag)
     except OSError as exc:
-        return f"miniai: echec du telechargement (~{size_mb} Mo attendus) -- {exc}"
+        return f"shss: echec du telechargement (~{size_mb} Mo attendus) -- {exc}"
 
-    return f"miniai: modele telecharge -> {path}\nUtilise #@ model {tag} @# pour l'activer."
+    return f"shss: modele telecharge -> {path}\nUtilise #@ model {tag} @# pour l'activer."
 
 
 def _format_switch_model(mini_llm, target: str) -> str:
@@ -109,13 +109,13 @@ def _format_switch_model(mini_llm, target: str) -> str:
     try:
         new_path = mini_llm.switch_model(model=model, tag=tag)
     except FileNotFoundError as exc:
-        return f"miniai: {exc}"
+        return f"shss: {exc}"
 
     return (
-        f"miniai: modele change -> {new_path}\n"
+        f"shss: modele change -> {new_path}\n"
         "(actif pour le reste de cette session REPL ; sans effet persistant\n"
         "en mode -c ou via Ctrl-G dans une console normale, qui relancent un\n"
-        "process a chaque fois -- exporte MINIAI_MODEL_TAG dans ~/.bashrc\n"
+        "process a chaque fois -- exporte SHSS_MODEL_TAG dans ~/.bashrc\n"
         "pour un changement permanent)"
     )
 
@@ -141,7 +141,7 @@ def try_builtin(request: str, mini_llm):
 
     if lower == "model":
         return (
-            "miniai: precise un tag -- #@ model <tag> @#  (ex: #@ model 3b @#)\n"
+            "shss: precise un tag -- #@ model <tag> @#  (ex: #@ model 3b @#)\n"
             "Voir aussi #@ models @# pour la liste, ou Ctrl-Y pour un selecteur interactif."
         )
 

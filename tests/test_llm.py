@@ -3,17 +3,17 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-import miniai.llm as llm_module
-from miniai.llm import ResolutionCancelled, discover_gguf_path
+import shss.llm as llm_module
+from shss.llm import ResolutionCancelled, discover_gguf_path
 
 
 def test_discover_gguf_path_env_override(monkeypatch):
-    monkeypatch.setenv("MINIAI_MODEL_PATH", "/some/where/model.gguf")
+    monkeypatch.setenv("SHSS_MODEL_PATH", "/some/where/model.gguf")
     assert discover_gguf_path() == "/some/where/model.gguf"
 
 
 def test_discover_gguf_path_falls_back_to_system_model_path(monkeypatch, tmp_path):
-    monkeypatch.delenv("MINIAI_MODEL_PATH", raising=False)
+    monkeypatch.delenv("SHSS_MODEL_PATH", raising=False)
     monkeypatch.setattr(llm_module, "_KNOWN_OLLAMA_DIRS", [])
     fake_model = tmp_path / "model.gguf"
     fake_model.write_bytes(b"")
@@ -32,7 +32,7 @@ def test_download_curated_model_rejects_unknown_tag():
 def _isolate_models_dirs(monkeypatch, tmp_path):
     """Point both the shared and per-user curated-model directories at
     tmp_path subfolders that don't exist yet, so tests never touch the
-    real /opt/miniai/models or ~/.miniai/models."""
+    real /opt/shss/models or ~/.shss/models."""
     monkeypatch.setattr(llm_module, "SYSTEM_MODELS_DIR", tmp_path / "system")
     monkeypatch.setattr(llm_module, "MODELS_DIR", tmp_path / "user")
 
@@ -131,8 +131,8 @@ def test_switch_model_not_found_mentions_download_command(monkeypatch, tmp_path)
 
 
 def test_switch_model_ignores_minaii_model_path_override(monkeypatch, tmp_path):
-    # MINIAI_MODEL_PATH doit gagner pour la resolution normale...
-    monkeypatch.setenv("MINIAI_MODEL_PATH", "/some/where/other.gguf")
+    # SHSS_MODEL_PATH doit gagner pour la resolution normale...
+    monkeypatch.setenv("SHSS_MODEL_PATH", "/some/where/other.gguf")
     assert discover_gguf_path() == "/some/where/other.gguf"
 
     # ...mais switch_model() doit quand meme trouver le modele Ollama
@@ -172,8 +172,8 @@ class _FakeLlama:
         return {"choices": [{"text": self.text}]}
 
 
-def _fake_miniai(monkeypatch, tmp_path, fake_text):
-    monkeypatch.setenv("MINIAI_HISTORY_PATH", str(tmp_path / "history.jsonl"))
+def _fake_shss(monkeypatch, tmp_path, fake_text):
+    monkeypatch.setenv("SHSS_HISTORY_PATH", str(tmp_path / "history.jsonl"))
     monkeypatch.setattr(llm_module, "SCRIPT_DIR", tmp_path / "scripts")
 
     instance = llm_module.MiniLLM.__new__(llm_module.MiniLLM)
@@ -183,7 +183,7 @@ def _fake_miniai(monkeypatch, tmp_path, fake_text):
 
 
 def test_generate_bash_inline_takes_only_first_line(monkeypatch, tmp_path):
-    llm = _fake_miniai(monkeypatch, tmp_path, "-la\n\nLigne: du bruit en trop")
+    llm = _fake_shss(monkeypatch, tmp_path, "-la\n\nLigne: du bruit en trop")
     assert llm.generate_bash("affiche aussi les fichiers caches", "ls ", "") == "-la"
 
 
@@ -192,7 +192,7 @@ def test_generate_bash_script_mode_writes_file_and_returns_its_path(monkeypatch,
         "#!/usr/bin/env python3\n"
         'import json\nwith open("a.txt") as f:\n    pass\n'
     )
-    llm = _fake_miniai(monkeypatch, tmp_path, script_text)
+    llm = _fake_shss(monkeypatch, tmp_path, script_text)
 
     result = llm.generate_bash("formate a.txt en json")
 
@@ -204,9 +204,9 @@ def test_generate_bash_script_mode_writes_file_and_returns_its_path(monkeypatch,
 
 
 def test_generate_bash_logs_to_history(monkeypatch, tmp_path):
-    from miniai.history import read_events
+    from shss.history import read_events
 
-    llm = _fake_miniai(monkeypatch, tmp_path, "-S")
+    llm = _fake_shss(monkeypatch, tmp_path, "-S")
     llm.generate_bash("trie par taille", "ls ", "")
 
     events = read_events()
@@ -217,7 +217,7 @@ def test_generate_bash_logs_to_history(monkeypatch, tmp_path):
 
 
 def test_generate_bash_confirm_sees_the_final_display_text(monkeypatch, tmp_path):
-    llm = _fake_miniai(monkeypatch, tmp_path, "-la\n\nLigne: du bruit en trop")
+    llm = _fake_shss(monkeypatch, tmp_path, "-la\n\nLigne: du bruit en trop")
     seen = {}
 
     def confirm(text):
@@ -230,9 +230,9 @@ def test_generate_bash_confirm_sees_the_final_display_text(monkeypatch, tmp_path
 
 
 def test_generate_bash_confirm_false_cancels_without_side_effects(monkeypatch, tmp_path):
-    from miniai.history import read_events
+    from shss.history import read_events
 
-    llm = _fake_miniai(monkeypatch, tmp_path, "#!/usr/bin/env python3\nprint('hi')")
+    llm = _fake_shss(monkeypatch, tmp_path, "#!/usr/bin/env python3\nprint('hi')")
 
     try:
         llm.generate_bash("fait un truc", confirm=lambda text: False)
