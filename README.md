@@ -373,9 +373,13 @@ accessible (déjà présent via Ollama, ou `SHSS_MODEL_PATH`).
 
 ```bash
 python3 -m venv .venv
-./.venv/bin/pip install -r requirements.txt
+./.venv/bin/pip install -r requirements.txt -r requirements-dev.txt
 ./.venv/bin/python -m pytest
 ```
+
+Les tests n'importent ni `llama-cpp-python` ni `prompt_toolkit` (import
+différé partout), donc `pip install -r requirements-dev.txt` seul suffit
+pour lancer `pytest`.
 
 ## Licence
 

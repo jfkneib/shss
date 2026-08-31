@@ -21,7 +21,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install -r requirements.txt
+      # Les tests n'importent ni llama-cpp-python ni prompt_toolkit (import
+      # différé partout) : inutile de compiler le runtime ici. Le job
+      # `build` valide l'installation runtime complète via l'image Docker.
+      - run: pip install -r requirements-dev.txt
       - run: python -m pytest -q
 
   build:

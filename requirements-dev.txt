@@ -1,0 +1,5 @@
+# Dépendances de développement (tests). Le runtime (llama-cpp-python,
+# prompt_toolkit) est dans requirements.txt ; la suite de tests ne les
+# importe qu'en différé (jamais au chargement d'un module), donc pytest
+# seul suffit pour `python -m pytest`.
+pytest
