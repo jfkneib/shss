@@ -117,6 +117,41 @@ version est **plus grande** — chaque release incrémente
 `src/shss/__init__.py`. Pour forcer la même version :
 `sudo apt install --reinstall ./shss_<version>_all.deb`.
 
+### Via apt (`sudo apt upgrade`)
+
+Le CI publie, à chaque tag `v*`, le `.deb` en pièce jointe de la
+[Release](https://github.com/jfkneib/shss/releases) **et** dans un dépôt
+apt plat sur la branche `apt`. Comme le dépôt GitHub est privé, apt s'y
+authentifie avec un jeton personnel (scope `repo`, lecture seule
+suffit) :
+
+```bash
+# 1. authentification (jeton dans un fichier lisible root uniquement)
+sudo tee /etc/apt/auth.conf.d/shss.conf >/dev/null <<'EOF'
+machine raw.githubusercontent.com
+login x-access-token
+password ghp_TON_JETON_ICI
+EOF
+sudo chmod 600 /etc/apt/auth.conf.d/shss.conf
+
+# 2. la source apt
+echo 'deb [trusted=yes] https://raw.githubusercontent.com/jfkneib/shss/apt/ ./' \
+  | sudo tee /etc/apt/sources.list.d/shss.list
+
+# 3. installer, puis mettre à jour comme n'importe quel paquet
+sudo apt update && sudo apt install shss
+sudo apt upgrade            # à chaque nouvelle release
+```
+
+Notes :
+
+- `[trusted=yes]` : le dépôt n'est pas encore signé GPG (à ajouter).
+- le fichier d'auth s'applique à **tout** `raw.githubusercontent.com` —
+  acceptable sur une machine perso.
+- `raw.githubusercontent.com` a un cache CDN (~5 min) : un `apt update`
+  juste après une release peut ne pas voir la nouvelle version tout de
+  suite.
+
 Passer à un modèle plus petit/gros après coup :
 
 ```bash

@@ -12,6 +12,7 @@ on:
     tags: ["v*"]
   pull_request:
     branches: [main]
+  workflow_dispatch: {}   # permet de (re)publier le dépôt apt à la demande
 
 jobs:
   test:
@@ -77,3 +78,55 @@ jobs:
             ghcr.io/${{ github.repository_owner }}/shss:latest-cuda
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # Construit le .deb, l'attache à la Release du tag, et met à jour le
+  # dépôt apt plat sur la branche orpheline `apt` (voir "Mise à jour via
+  # apt" dans le README). Tourne sur tag v* et sur workflow_dispatch.
+  deb:
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends dpkg-dev apt-utils
+
+      - name: build .deb
+        id: deb
+        run: |
+          ./packaging/build.sh
+          echo "version=$(sed -n 's/__version__ = \"\(.*\)\"/\1/p' src/shss/__init__.py)" >> "$GITHUB_OUTPUT"
+
+      - name: attach to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: shss_*.deb
+          generate_release_notes: true
+
+      - name: publish to the apt branch
+        env:
+          VERSION: ${{ steps.deb.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code --heads origin apt; then
+            git worktree add /tmp/apt apt
+          else
+            empty=$(git hash-object -t tree /dev/null)
+            root=$(git commit-tree "$empty" -m "apt: init")
+            git branch apt "$root"
+            git worktree add /tmp/apt apt
+          fi
+          cp "shss_${VERSION}_all.deb" /tmp/apt/
+          cd /tmp/apt
+          dpkg-scanpackages --multiversion . > Packages
+          gzip -9kf Packages
+          apt-ftparchive release . > Release
+          git add -A
+          git commit -m "apt: shss ${VERSION}" || { echo "rien à publier"; exit 0; }
+          git push origin apt
