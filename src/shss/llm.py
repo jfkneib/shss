@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 import tempfile
 import time
 import urllib.request
@@ -263,6 +264,35 @@ def download_curated_model(tag: str) -> str:
     return str(dest)
 
 
+def _env_int(name: str, default):
+    """int() of env var `name`, or `default` if unset/empty/unparseable."""
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
+
+def _gpu_layers() -> int:
+    """How many model layers to offload to the GPU.
+
+    `SHSS_N_GPU_LAYERS` unset or "auto" (the default): offload everything
+    (-1) when an NVIDIA GPU looks present (`nvidia-smi` on PATH), nothing
+    (0) otherwise. An explicit integer always wins. A non-zero value is
+    harmless on a CPU-only llama.cpp build — llama.cpp just ignores it —
+    so the same image works with and without `--gpus`.
+    """
+    raw = os.environ.get("SHSS_N_GPU_LAYERS", "auto").strip().lower()
+    if raw in ("", "auto"):
+        return -1 if shutil.which("nvidia-smi") else 0
+    try:
+        return int(raw)
+    except ValueError:
+        return 0
+
+
 class ResolutionCancelled(Exception):
     """Raised when a `confirm` callback declines a generated result."""
 
@@ -298,7 +328,10 @@ class MiniLLM:
     def __init__(self, model_path=None, n_ctx=2048):
         self.model_path = model_path or discover_gguf_path()
         self._llm = None
-        self._n_ctx = n_ctx
+        # SHSS_N_CTX lets a deployment shrink the context window (the
+        # few-shot prompt + a file preview fit well under 1024) to cut
+        # RAM and prompt-eval time.
+        self._n_ctx = _env_int("SHSS_N_CTX", n_ctx)
 
     def _ensure_loaded(self):
         if self._llm is None:
@@ -307,6 +340,11 @@ class MiniLLM:
             self._llm = Llama(
                 model_path=self.model_path,
                 n_ctx=self._n_ctx,
+                # None => llama.cpp picks a default; SHSS_N_THREADS should
+                # be set to the number of physical cores (llama.cpp often
+                # guesses badly inside a container).
+                n_threads=_env_int("SHSS_N_THREADS", None),
+                n_gpu_layers=_gpu_layers(),
                 verbose=False,
             )
 

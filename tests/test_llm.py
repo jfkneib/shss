@@ -162,6 +162,42 @@ def test_switch_model_ignores_minaii_model_path_override(monkeypatch, tmp_path):
     assert instance._llm is None
 
 
+def test_env_int_parses_or_falls_back(monkeypatch):
+    monkeypatch.setenv("SHSS_TEST_INT", "6")
+    assert llm_module._env_int("SHSS_TEST_INT", 1) == 6
+    monkeypatch.setenv("SHSS_TEST_INT", "")
+    assert llm_module._env_int("SHSS_TEST_INT", 1) == 1
+    monkeypatch.setenv("SHSS_TEST_INT", "pas-un-nombre")
+    assert llm_module._env_int("SHSS_TEST_INT", 1) == 1
+    monkeypatch.delenv("SHSS_TEST_INT", raising=False)
+    assert llm_module._env_int("SHSS_TEST_INT", None) is None
+
+
+def test_gpu_layers_auto_detects_nvidia(monkeypatch):
+    monkeypatch.delenv("SHSS_N_GPU_LAYERS", raising=False)
+    monkeypatch.setattr(llm_module.shutil, "which", lambda name: "/usr/bin/nvidia-smi")
+    assert llm_module._gpu_layers() == -1
+    monkeypatch.setattr(llm_module.shutil, "which", lambda name: None)
+    assert llm_module._gpu_layers() == 0
+
+
+def test_gpu_layers_explicit_value_wins(monkeypatch):
+    monkeypatch.setattr(llm_module.shutil, "which", lambda name: None)
+    monkeypatch.setenv("SHSS_N_GPU_LAYERS", "20")
+    assert llm_module._gpu_layers() == 20
+    monkeypatch.setenv("SHSS_N_GPU_LAYERS", "0")
+    assert llm_module._gpu_layers() == 0
+
+
+def test_n_ctx_env_override(monkeypatch):
+    monkeypatch.setenv("SHSS_N_CTX", "1024")
+    instance = llm_module.MiniLLM.__new__(llm_module.MiniLLM)
+    instance.model_path = "/x.gguf"
+    instance._llm = None
+    instance._n_ctx = llm_module._env_int("SHSS_N_CTX", 2048)
+    assert instance._n_ctx == 1024
+
+
 class _FakeLlama:
     def __init__(self, text):
         self.text = text
