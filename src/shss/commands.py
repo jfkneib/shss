@@ -9,6 +9,7 @@ commands work identically in the REPL, -c mode, and the bashrc Ctrl-G
 integration because they're just text — see try_builtin().
 """
 
+import os
 from pathlib import Path
 
 from . import llm as llm_module
@@ -71,10 +72,17 @@ def _format_models_list(mini_llm) -> str:
     lines.append(
         f"Modeles curates telechargeables sans Ollama ({llm_module.CURATED_MODEL_FAMILY}) :"
     )
+    active_path = os.path.realpath(mini_llm.model_path) if mini_llm.model_path else None
     for tag, (_url, size_mb) in llm_module.CURATED_MODELS.items():
-        downloaded = Path(llm_module.curated_model_path(tag)).is_file()
+        curated_path = Path(llm_module.curated_model_path(tag))
+        downloaded = curated_path.is_file()
         status = "deja telecharge" if downloaded else f"~{size_mb} Mo"
-        lines.append(f"  - {tag} ({status})")
+        marker = (
+            " (actif)"
+            if downloaded and os.path.realpath(curated_path) == active_path
+            else ""
+        )
+        lines.append(f"  - {tag} ({status}){marker}")
     lines.append(
         "Pour telecharger : #@ model download <tag> @#  (ex: #@ model download 3b @#)"
     )

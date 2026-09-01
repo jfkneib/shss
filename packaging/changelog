@@ -1,3 +1,15 @@
+shss (0.2.2) unstable; urgency=low
+
+  * `#@ models @#` marque aussi « (actif) » le modele curate en cours
+    d'utilisation, plus seulement les modeles Ollama.
+  * Image Docker CUDA : wheel llama-cpp-python precompilee au lieu de
+    compiler llama.cpp (build ~1 min). Image ~10 Go, GPU obligatoire,
+    non publiee sur GHCR ; a construire en local.
+  * Le `.deb` est publie dans les GitHub Releases et dans un depot apt
+    prive (branche `apt`) pour `sudo apt upgrade`.
+
+ -- Jean-Francois Kneib <kneib.jean-francois@cegetel.net>  Mon, 01 Sep 2026 09:00:00 +0200
+
 shss (0.2.1) unstable; urgency=low
 
   * discover_gguf_path() retombe sur un modele curate deja telecharge :

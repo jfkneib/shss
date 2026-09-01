@@ -63,6 +63,21 @@ def test_models_marks_the_active_one(monkeypatch, tmp_path):
     assert "- qwen2.5-coder:1.5b-base" in lines
 
 
+def test_models_marks_the_active_curated_model(monkeypatch, tmp_path):
+    _fake_manifests(monkeypatch, tmp_path, [("qwen2.5-coder", "1.5b-base")])
+    monkeypatch.setattr(llm_module, "_read_manifest_blob", lambda *a: None)
+    user_dir = tmp_path / "curated-user"
+    user_dir.mkdir(parents=True)
+    active = user_dir / f"{llm_module.CURATED_MODEL_FAMILY}-0.5b.gguf"
+    active.write_bytes(b"")
+
+    out = try_builtin("models", _FakeMiniLLM(model_path=str(active)))
+    lines = {line.strip() for line in out.splitlines()}
+
+    assert "- 0.5b (deja telecharge) (actif)" in lines
+    assert "- 1.5b-base (~941 Mo)" in lines
+
+
 def test_model_command_bare_shows_usage_instead_of_falling_through():
     mini = _FakeMiniLLM()
     out = try_builtin("model", mini)
