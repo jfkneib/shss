@@ -23,3 +23,28 @@ Description: console bash augmentee par un petit LLM local
  model, history, help), et un selecteur de modele interactif (Ctrl-Y,
  necessite fzf).
 
+Package: shss
+Version: 0.2.2
+Architecture: all
+Maintainer: Jean-Francois Kneib <kneib.jean-francois@cegetel.net>
+Depends: python3 (>= 3.9), python3-venv, python3-pip, curl, ca-certificates
+Recommends: fzf
+Filename: ./shss_0.2.2_all.deb
+Size: 44352
+MD5sum: 4edae9245df6f0f8d744dff252ac7ee1
+SHA1: 6136f1a1ebdd453c21939f3526c1c9fce7f9beac
+SHA256: 2f99a4e4977f2495ad8b6b9e4304858cbc5cb319dcc5f96730f23ef89fd5c57d
+Section: utils
+Priority: optional
+Description: console bash augmentee par un petit LLM local
+ shss resout, dans une ligne de bash, tout bloc "#@ demande @#" en
+ l'envoyant a un petit LLM local (qwen2.5-coder:1.5b-base, GGUF, charge
+ directement via llama-cpp-python, sans serveur Ollama) et remplace la
+ balise en place par le fragment bash genere avant execution.
+ .
+ Fournit un REPL (shss), un mode one-shot (shss -c), une integration
+ Ctrl-G directement dans une console bash normale via
+ shell-integration/shss.bash, des commandes utilitaires (models,
+ model, history, help), et un selecteur de modele interactif (Ctrl-Y,
+ necessite fzf).
+
