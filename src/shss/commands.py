@@ -10,10 +10,27 @@ integration because they're just text — see try_builtin().
 """
 
 import os
+import re
 from pathlib import Path
 
 from . import llm as llm_module
 from .history import read_events
+
+# Un spec de modele : "nom" ou "nom:tag", chaque partie faite de
+# lettres/chiffres/._- (convention Ollama). Sert de garde-fou : une
+# balise mal fermee (`#@ model 3b @"` au lieu de `@#` -- meme touche que
+# `#` sur AZERTY) fait arriver ici un "tag" comme `@"`, et l'erreur
+# Ollama qui suivait ("GGUF introuvable pour qwen2.5-coder:@\"") ne
+# disait pas que le vrai probleme etait la balise.
+_MODEL_SPEC_RE = re.compile(r"[A-Za-z0-9][\w.-]*(:[A-Za-z0-9][\w.-]*)?$")
+
+
+def _bad_model_spec_hint(target: str) -> str:
+    return (
+        f"shss: « {target} » n'est pas un nom de modele valide -- "
+        "la balise est-elle bien fermee par @# ?\n"
+        "(ex: #@ model 3b @#  ;  #@ models @# pour la liste)"
+    )
 
 HELP_TEXT = """Commandes utilitaires shss (traitees directement, sans appeler le LLM) :
   #@ models @#             liste les modeles Ollama + curates disponibles
@@ -91,6 +108,8 @@ def _format_models_list(mini_llm) -> str:
 
 
 def _format_download_model(tag: str) -> str:
+    if not _MODEL_SPEC_RE.match(tag):
+        return _bad_model_spec_hint(tag)
     if tag not in llm_module.CURATED_MODELS:
         options = ", ".join(llm_module.CURATED_MODELS)
         return f"shss: '{tag}' n'est pas dans la liste curatee ({options})"
@@ -109,6 +128,9 @@ def _format_download_model(tag: str) -> str:
 
 
 def _format_switch_model(mini_llm, target: str) -> str:
+    if not _MODEL_SPEC_RE.match(target):
+        return _bad_model_spec_hint(target)
+
     if ":" in target:
         model, tag = target.split(":", 1)
     else:

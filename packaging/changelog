@@ -1,3 +1,12 @@
+shss (0.2.4) unstable; urgency=low
+
+  * #@ model <tag> @# / #@ model download <tag> @# : si le tag contient
+    des caracteres impossibles dans un nom de modele (typiquement une
+    balise mal fermee, `@"` au lieu de `@#` -- meme touche sur AZERTY),
+    shss repond « probleme de balise ? » au lieu de l'erreur Ollama.
+
+ -- Jean-Francois Kneib <kneib.jean-francois@cegetel.net>  Mon, 01 Sep 2026 18:15:00 +0200
+
 shss (0.2.3) unstable; urgency=low
 
   * `shss --list-models` (et donc le selecteur Ctrl-Y) inclut aussi les

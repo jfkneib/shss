@@ -78,6 +78,25 @@ def test_models_marks_the_active_curated_model(monkeypatch, tmp_path):
     assert "- 1.5b-base (~941 Mo)" in lines
 
 
+def test_model_command_rejects_a_malformed_tag_with_a_delimiter_hint():
+    # `#@ model 3b @"` (AZERTY: `"` au lieu de `#`) fait arriver `@"` ici.
+    mini = _FakeMiniLLM()
+    out = try_builtin('model @"', mini)
+    assert mini.switched_to is None
+    assert "balise" in out and "@#" in out
+
+
+def test_model_download_rejects_a_malformed_tag_with_a_delimiter_hint():
+    out = try_builtin('model download @"', _FakeMiniLLM())
+    assert "balise" in out and "@#" in out
+
+
+def test_model_command_still_accepts_a_valid_name_colon_tag_after_the_guard():
+    mini = _FakeMiniLLM()
+    try_builtin("model deepseek-coder:1.3b", mini)
+    assert mini.switched_to == ("deepseek-coder", "1.3b")
+
+
 def test_model_command_bare_shows_usage_instead_of_falling_through():
     mini = _FakeMiniLLM()
     out = try_builtin("model", mini)
