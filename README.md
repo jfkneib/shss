@@ -2,77 +2,80 @@
 
 ***SH**ell **S**imple **S**uggestion*
 
-Console bash augmentée : dans n'importe quelle ligne, un bloc `#@ demande @#`
-est résolu par un petit LLM local avant exécution, et remplacé en place par
-du bash. Le reste de la ligne est du bash normal, exécuté dans une vraie
-session bash persistante (cd, variables d'environnement, etc. sont
-conservés d'une ligne à l'autre).
+*English version. Version française : [LISEZMOI.md](LISEZMOI.md).*
 
-## Installation via paquet Debian (.deb)
+An augmented bash console: on any line, a `#@ request @#` block is resolved
+by a small local LLM before execution and replaced in place with bash. The
+rest of the line is ordinary bash, run in a real persistent bash session
+(`cd`, environment variables, etc. are kept from one line to the next).
 
-Le plus simple pour un usage courant — installe tout (dépendances Python
-dans un venv dédié, modèle GGUF, intégration `Ctrl-G` dans `~/.bashrc`,
-page de manuel) sans manipulation manuelle :
+> The built-in few-shot prompt is written in **French** (see
+> `src/shss/llm.py`). English requests work, but French is what the model
+> is tuned for here.
+
+## Install via a Debian package (.deb)
+
+The simplest option for everyday use — installs everything (Python
+dependencies in a dedicated venv, the GGUF model, the `Ctrl-G` integration
+in `~/.bashrc`, a man page) with no manual steps:
 
 ```bash
 ./packaging/build.sh
 sudo apt install ./shss_0.2.2_all.deb
 ```
 
-Le paquet installe dans `/opt/shss/` (venv Python, modèle, code), les
-commandes `shss` / `shss-resolve-inline` dans `/usr/bin/`, et une
-page de manuel (`man shss`). Il réutilise le modèle déjà présent via
-Ollama s'il le trouve, sinon le télécharge depuis Hugging Face
-(~950 Mo). Il ajoute aussi `source .../shell-integration/shss.bash` au
-`~/.bashrc` de l'utilisateur qui a lancé `sudo` (variable `$SUDO_USER`) —
-si ce n'est pas détecté, l'ajout manuel de cette ligne est affiché à
-l'écran en fin d'installation.
+The package installs into `/opt/shss/` (Python venv, model, code), the
+`shss` / `shss-resolve-inline` commands into `/usr/bin/`, and a man page
+(`man shss`). It reuses a model already present through Ollama if it finds
+one, otherwise downloads it from Hugging Face (~950 MB). It also adds
+`source .../shell-integration/shss.bash` to the `~/.bashrc` of the user who
+ran `sudo` (the `$SUDO_USER` variable) — if that can't be detected, the
+line to add manually is printed at the end of the install.
 
-Détails complets (contenu du paquet, scripts `postinst`/`postrm`,
-suppression) dans [packaging/](packaging/).
+Full details (package contents, `postinst`/`postrm` scripts, removal) in
+[packaging/](packaging/).
 
-## Installation via Docker
+## Install via Docker
 
-Pour **essayer** shss sans rien installer sur l'hôte, ou pour le
-distribuer via un registre. Dans un conteneur, shss augmente le bash
-**du conteneur** (pas celui de l'hôte) : idéal pour le mode `-c` et la
-démo ; pour l'intégration `Ctrl-G` dans ton `~/.bashrc`, c'est le paquet
-`.deb` qu'il faut.
+To **try** shss without installing anything on the host, or to distribute
+it through a registry. Inside a container, shss augments the **container's**
+bash (not the host's): ideal for `-c` mode and demos; for the `Ctrl-G`
+integration in your `~/.bashrc`, use the `.deb` package.
 
-Construire les images (une fois) :
+Build the images (once):
 
 ```bash
-docker build --target cpu  -t shss:cpu  .    # ~400 Mo sur disque, inférence CPU
-docker build --target cuda -t shss:cuda .    # ~10 Go, GPU obligatoire (--gpus all)
+docker build --target cpu  -t shss:cpu  .    # ~400 MB on disk, CPU inference
+docker build --target cuda -t shss:cuda .    # ~10 GB, GPU required (--gpus all)
 ```
 
-L'image `cuda` embarque la wheel `llama-cpp-python` CUDA (pas de
-compilation) ; elle **ne tourne qu'avec `--gpus all`** sur un hôte doté
-du pilote NVIDIA (`libcuda.so.1` est fourni par le runtime conteneur au
-lancement) — pas de repli CPU. Pour du CPU, utilise l'image `cpu`.
+The `cuda` image bundles the prebuilt CUDA `llama-cpp-python` wheel (no
+compilation); it **only runs with `--gpus all`** on a host that has the
+NVIDIA driver (`libcuda.so.1` is provided by the container runtime at
+launch) — there is no CPU fallback. For CPU, use the `cpu` image.
 
-Puis, via le wrapper :
+Then, via the wrapper:
 
 ```bash
 ./run.sh                                 # REPL
-./run.sh -c 'ls #@ trie par taille @#'   # one-shot
+./run.sh -c 'ls #@ sort by size @#'      # one-shot
 ```
 
-`run.sh` monte le dossier courant sur `/work`, garde le modèle dans un
-volume `shss-models` (téléchargé une seule fois, ~941 Mo en `1.5b-base`),
-passe `--gpus all` automatiquement si un GPU NVIDIA est détecté, et fixe
-`SHSS_N_THREADS` au nombre de cœurs.
+`run.sh` mounts the current directory at `/work`, keeps the model in a
+`shss-models` volume (downloaded once, ~941 MB for `1.5b-base`), passes
+`--gpus all` automatically if an NVIDIA GPU is detected, and sets
+`SHSS_N_THREADS` to the core count.
 
-Le modèle n'est **pas** dans l'image ; l'entrypoint le télécharge au
-premier lancement depuis la liste curatée de
-[`src/shss/llm.py`](src/shss/llm.py). Choisir un modèle plus gros :
+The model is **not** in the image; the entrypoint downloads it on first
+launch from the curated list in [`src/shss/llm.py`](src/shss/llm.py).
+Pick a bigger model:
 
 ```bash
-SHSS_MODEL_TAG=7b ./run.sh pull   # télécharge une fois dans le volume
-SHSS_MODEL_TAG=7b ./run.sh        # puis l'utilise
+SHSS_MODEL_TAG=7b ./run.sh pull   # download once into the volume
+SHSS_MODEL_TAG=7b ./run.sh        # then use it
 ```
 
-Sans le wrapper :
+Without the wrapper:
 
 ```bash
 docker volume create shss-models
@@ -81,127 +84,123 @@ docker run --rm -it \
   shss:cpu
 ```
 
-L'historique des résolutions est écrit dans le volume
-(`/models/history.jsonl`), donc persistant. En revanche un résultat en
-**mode script** est écrit dans le `/tmp` du conteneur : le chemin affiché
-n'est pas accessible depuis l'hôte (limite inhérente au conteneur — le
-mode fragment sur une ligne, lui, s'exécute normalement dans `/work`).
+The resolution history is written to the volume
+(`/models/history.jsonl`), so it persists. A **script-mode** result,
+however, is written to the container's `/tmp`: the printed path is not
+reachable from the host (an inherent container limitation — the one-line
+fragment mode runs normally in `/work`).
 
-Alternative `compose` (profil `gpu` inclus) : voir
-[compose.yaml](compose.yaml). L'image **`cpu`** est publiée sur GHCR à
-chaque tag `v*` (`ghcr.io/jfkneib/shss:<version>` + `:latest`) et sur
-`main` (`:edge`) — voir [.github/workflows/docker.yml](.github/workflows/docker.yml) ;
-l'image `cuda` se construit en local.
+`compose` alternative (`gpu` profile included): see
+[compose.yaml](compose.yaml). The **`cpu`** image is published to GHCR on
+every `v*` tag (`ghcr.io/jfkneib/shss:<version>` + `:latest`) and on
+`main` (`:edge`) — see [.github/workflows/docker.yml](.github/workflows/docker.yml);
+the `cuda` image is built locally.
 
-**Podman** : `podman` remplace `docker` dans toutes les commandes
-ci-dessus (`podman build`, `podman compose build`, `podman pull …`).
-Pour le GPU, podman utilise `--device nvidia.com/gpu=all` au lieu de
-`--gpus all` ; `run.sh` reste spécifique à Docker.
+**Podman**: `podman` replaces `docker` in all the commands above
+(`podman build`, `podman compose build`, `podman pull …`). For the GPU,
+podman uses `--device nvidia.com/gpu=all` instead of `--gpus all`;
+`run.sh` remains Docker-specific.
 
-### Réglage des performances (variables d'env)
+### Performance tuning (env vars)
 
-| Variable | Effet |
+| Variable | Effect |
 | --- | --- |
-| `SHSS_N_THREADS` | nombre de threads d'inférence — à mettre au nombre de cœurs **physiques** (llama.cpp devine souvent mal en conteneur) ; `run.sh` utilise `nproc` |
-| `SHSS_N_CTX` | fenêtre de contexte (défaut 2048) — `1024` suffit largement au prompt few-shot + aperçu de fichier, et réduit RAM et temps de *prompt-eval* |
-| `SHSS_N_GPU_LAYERS` | `auto` (défaut) : tout offloader si `nvidia-smi` est présent, rien sinon. Un entier force la valeur. Sans effet sur un binaire llama.cpp compilé sans CUDA (donc l'image `cpu` ignore la variable). |
-| `SHSS_MODEL_TAG` | `0.5b`, `1.5b-base` (défaut), `3b`, `7b` — le GPU n'apporte quasi rien sous 1.5b, mais devient utile en 7b |
+| `SHSS_N_THREADS` | number of inference threads — set to the number of **physical** cores (llama.cpp often guesses badly in a container); `run.sh` uses `nproc` |
+| `SHSS_N_CTX` | context window (default 2048) — `1024` is plenty for the few-shot prompt + a file preview, and cuts RAM and prompt-eval time |
+| `SHSS_N_GPU_LAYERS` | `auto` (default): offload everything if `nvidia-smi` is present, nothing otherwise. An integer forces the value. No effect on a llama.cpp binary built without CUDA (so the `cpu` image ignores the variable). |
+| `SHSS_MODEL_TAG` | `0.5b`, `1.5b-base` (default), `3b`, `7b` — the GPU adds almost nothing below 1.5b, but becomes useful at 7b |
 
-Pense à donner assez de ressources au conteneur : `--cpus 4` au minimum,
-et `--memory` ≥ 1,5 Go (1.5b) / 6 Go (7b).
+Give the container enough resources: `--cpus 4` minimum, and
+`--memory` ≥ 1.5 GB (1.5b) / 6 GB (7b).
 
-## Mise à jour
+## Updating
 
-Selon la méthode d'installation :
+Depending on how it was installed:
 
-| Installé via | Mettre à jour |
+| Installed via | Update |
 | --- | --- |
-| Paquet `.deb` | `cd <checkout> && git pull && ./packaging/build.sh && sudo apt install ./shss_<version>_all.deb` |
-| Checkout git seul | `git pull` (rien d'autre) |
-| Docker | `docker pull ghcr.io/jfkneib/shss:latest` (ou `git pull && docker build --target cpu -t shss:cpu .`) |
+| `.deb` package | `cd <checkout> && git pull && ./packaging/build.sh && sudo apt install ./shss_<version>_all.deb` |
+| git checkout only | `git pull` (nothing else) |
+| Docker | `docker pull ghcr.io/jfkneib/shss:latest` (or `git pull && docker build --target cpu -t shss:cpu .`) |
 
-Dans tous les cas, ce qui est **conservé** : le modèle GGUF (jamais
-re-téléchargé), le venv Python, la ligne `~/.bashrc`, et tes réglages
-(`SHSS_MODEL_TAG`, `SHSS_MODEL_PATH`… vivent dans `~/.bashrc`, pas dans le
-paquet). Le modèle Docker vit dans le volume `shss-models`, également
-préservé.
+In every case, what is **kept**: the GGUF model (never re-downloaded), the
+Python venv, the `~/.bashrc` line, and your settings (`SHSS_MODEL_TAG`,
+`SHSS_MODEL_PATH`… live in `~/.bashrc`, not in the package). The Docker
+model lives in the `shss-models` volume, also preserved.
 
-**Piège `.deb`** : `apt install ./fichier.deb` ne met à jour que si la
-version est **plus grande** — chaque release incrémente
-`src/shss/__init__.py`. Pour forcer la même version :
-`sudo apt install --reinstall ./shss_<version>_all.deb`.
+**`.deb` gotcha**: `apt install ./file.deb` only updates if the version is
+**higher** — every release bumps `src/shss/__init__.py`. To force the same
+version: `sudo apt install --reinstall ./shss_<version>_all.deb`.
 
 ### Via apt (`sudo apt upgrade`)
 
-Le CI publie, à chaque tag `v*`, le `.deb` en pièce jointe de la
-[Release](https://github.com/jfkneib/shss/releases) **et** dans un dépôt
-apt plat sur la branche `apt`. Comme le dépôt GitHub est privé, apt s'y
-authentifie avec un jeton personnel (scope `repo`, lecture seule
-suffit) :
+On every `v*` tag, CI publishes the `.deb` both as an asset on the
+[Release](https://github.com/jfkneib/shss/releases) **and** in a flat apt
+repo on the `apt` branch. Since the GitHub repo is private, apt
+authenticates to it with a personal token (`repo` scope, read-only is
+enough):
 
 ```bash
-# 1. authentification (jeton dans un fichier lisible root uniquement)
+# 1. authentication (token in a root-only readable file)
 sudo tee /etc/apt/auth.conf.d/shss.conf >/dev/null <<'EOF'
 machine raw.githubusercontent.com
 login x-access-token
-password ghp_TON_JETON_ICI
+password ghp_YOUR_TOKEN_HERE
 EOF
 sudo chmod 600 /etc/apt/auth.conf.d/shss.conf
 
-# 2. la source apt
+# 2. the apt source
 echo 'deb [trusted=yes] https://raw.githubusercontent.com/jfkneib/shss/apt/ ./' \
   | sudo tee /etc/apt/sources.list.d/shss.list
 
-# 3. installer, puis mettre à jour comme n'importe quel paquet
+# 3. install, then update like any other package
 sudo apt update && sudo apt install shss
-sudo apt upgrade            # à chaque nouvelle release
+sudo apt upgrade            # on every new release
 ```
 
-Notes :
+Notes:
 
-- `[trusted=yes]` : le dépôt n'est pas encore signé GPG (à ajouter).
-- le fichier d'auth s'applique à **tout** `raw.githubusercontent.com` —
-  acceptable sur une machine perso.
-- `raw.githubusercontent.com` a un cache CDN (~5 min) : un `apt update`
-  juste après une release peut ne pas voir la nouvelle version tout de
-  suite.
+- `[trusted=yes]`: the repo is not GPG-signed yet (to be added).
+- the auth file applies to **all** of `raw.githubusercontent.com` —
+  acceptable on a personal machine.
+- `raw.githubusercontent.com` has a CDN cache (~5 min): an `apt update`
+  right after a release may not see the new version immediately.
 
-Passer à un modèle plus petit/gros après coup :
+Switch to a smaller/bigger model afterwards:
 
 ```bash
-sudo shss -c '#@ model download 0.5b @#'   # une fois (partagé machine)
+sudo shss -c '#@ model download 0.5b @#'   # once (shared machine-wide)
 echo 'export SHSS_MODEL_TAG=0.5b' >> ~/.bashrc && source ~/.bashrc
 ```
 
-## Utilisation (depuis un checkout git, sans paquet)
+## Usage (from a git checkout, no package)
 
 ```bash
 ./bin/shss
-shss:/home/jfk$ ls #@ affiche aussi les fichiers caches @#
+shss:/home/jfk$ ls #@ also show hidden files @#
 → ls -la
 ...
 
 shss:/home/jfk$ exit
 ```
 
-Plusieurs demandes peuvent apparaître sur une même ligne, mélangées à du
-bash classique :
+Several requests can appear on the same line, mixed with plain bash:
 
 ```bash
-ls #@ 1ère demande @#  #@ 2ème demande @#
+ls #@ first request @#  #@ second request @#
 ```
 
-Mode one-shot (comme `bash -c`) :
+One-shot mode (like `bash -c`):
 
 ```bash
-./bin/shss -c 'ls #@ affiche aussi les fichiers caches @#'
+./bin/shss -c 'ls #@ also show hidden files @#'
 ```
 
-Dans le REPL, `Ctrl-G` résout immédiatement la balise la plus proche du
-curseur — qu'elle soit déjà fermée par `@#` ou encore en cours de frappe —
-sans attendre Entrée. Avant d'appliquer le résultat, `Ctrl-G` affiche ce
-qui serait inséré (le fragment, ou le contenu complet du script en mode
-script) et demande confirmation :
+In the REPL, `Ctrl-G` immediately resolves the tag nearest the cursor —
+whether it is already closed with `@#` or still being typed — without
+waiting for Enter. Before applying the result, `Ctrl-G` shows what would
+be inserted (the fragment, or the full script source in script mode) and
+asks for confirmation:
 
 ```text
 shss propose :
@@ -210,262 +209,252 @@ shss propose :
 Utiliser ce résultat ? [O/n]
 ```
 
-Répondre non (`n`) laisse la ligne inchangée, comme si `Ctrl-G` n'avait
-pas été pressé — dans le REPL, rien n'est écrit ni journalisé tant que
-tu n'as pas confirmé. Cette confirmation n'existe que pour `Ctrl-G` — la
-résolution automatique d'une balise déjà fermée à l'Entrée (REPL ou `-c`)
-reste directe, sans prompt, pour ne pas casser des usages non
-interactifs.
+Answering no (`n`) leaves the line unchanged, as if `Ctrl-G` had not been
+pressed — in the REPL, nothing is written or logged until you confirm.
+This confirmation only exists for `Ctrl-G` — automatic resolution of an
+already-closed tag on Enter (REPL or `-c`) stays direct, with no prompt,
+so as not to break non-interactive uses.
 
-### Intégration dans ta console bash normale (sans ./bin/shss)
+### Integration in your normal bash console (without ./bin/shss)
 
-`Ctrl-G` peut aussi être branché directement dans ta session bash
-habituelle (pas besoin de lancer `./bin/shss`) :
+`Ctrl-G` can also be wired directly into your usual bash session (no need
+to run `./bin/shss`):
 
 ```bash
 echo 'source /home/jfk/git/dev/shss/shell-integration/shss.bash' >> ~/.bashrc
 ```
 
-Contrairement au REPL, il n'y a **pas** de confirmation Oui/non ici :
-lire une réponse au clavier depuis une fonction `bind -x` s'est avéré peu
-fiable — testé et confirmé sur un vrai poste (terminal Terminator) :
-même un `read` minimal, sans rapport avec shss, ne recevait aucune
-touche (piège connu de bash, pas un bug shss — voir
-`shell-integration/shss.bash` pour le détail). `Ctrl-G` affiche donc ce
-qui a été généré (utile surtout en mode script, où la ligne ne montre
-qu'un chemin de fichier) puis l'applique **directement** — la ligne reste
-éditable avant Entrée, comme n'importe quelle commande bash, ce qui sert
-de vérification.
+Unlike the REPL, there is **no** yes/no confirmation here: reading a
+keypress from a `bind -x` function proved unreliable — tested and
+confirmed on a real machine (Terminator terminal): even a minimal `read`,
+unrelated to shss, received no keystrokes (a known bash pitfall, not a
+shss bug — see `shell-integration/shss.bash` for details). So `Ctrl-G`
+shows what was generated (useful mostly in script mode, where the line
+only shows a file path) then applies it **directly** — the line stays
+editable before Enter, like any bash command, which serves as the check.
 
-Détails, limites et piège à connaître (bash traite `#@ ... @#` comme un
-commentaire si on presse Entrée sans passer par `Ctrl-G` d'abord) dans
-[docs/getting-started.md](docs/getting-started.md#7-intégration-dans-ta-console-bash-normale-sans-lancer-binshss).
+Details, limits, and a pitfall to know about (bash treats `#@ ... @#` as a
+comment if you press Enter without going through `Ctrl-G` first) in
+[docs/getting-started.md](docs/getting-started.md#7-intégration-dans-ta-console-bash-normale-sans-lancer-binshss)
+(French).
 
-## Modèle LLM
+## LLM model
 
-Le modèle utilisé est `qwen2.5-coder:1.5b-base`, chargé **directement** via
-[`llama-cpp-python`](https://github.com/abetlen/llama-cpp-python) (liaison
-Python de llama.cpp) — pas de serveur Ollama à l'exécution. Le fichier
-`.gguf` déjà téléchargé par Ollama pour ce modèle est réutilisé tel quel
-(voir `src/shss/llm.py::discover_gguf_path`), sans le retélécharger.
+The model used is `qwen2.5-coder:1.5b-base`, loaded **directly** through
+[`llama-cpp-python`](https://github.com/abetlen/llama-cpp-python) (Python
+binding for llama.cpp) — no Ollama server at runtime. The `.gguf` file
+already downloaded by Ollama for that model is reused as-is (see
+`src/shss/llm.py::discover_gguf_path`), without re-downloading it.
 
-Pour pointer vers un autre fichier `.gguf` :
+To point at another `.gguf` file:
 
 ```bash
-export SHSS_MODEL_PATH=/chemin/vers/modele.gguf
+export SHSS_MODEL_PATH=/path/to/model.gguf
 ```
 
-**Ollama n'est pas requis.** Le code ne lance jamais le binaire `ollama`
-ni ne contacte de serveur — il lit juste un fichier `.gguf` sur disque.
-Ollama sert uniquement de raccourci pratique pour obtenir ce fichier sans
-le télécharger soi-même (via `discover_gguf_path`, qui lit le manifest
-qu'Ollama a laissé sur disque). Sans Ollama installé, `SHSS_MODEL_PATH`
-vers n'importe quel `.gguf` (téléchargé par exemple depuis Hugging Face)
-suffit à faire fonctionner shss de la même façon.
+**Ollama is not required.** The code never runs the `ollama` binary nor
+contacts a server — it just reads a `.gguf` file on disk. Ollama is only a
+convenient shortcut to obtain that file without downloading it yourself
+(via `discover_gguf_path`, which reads the manifest Ollama left on disk).
+Without Ollama installed, `SHSS_MODEL_PATH` pointing at any `.gguf`
+(downloaded from Hugging Face, for example) is enough for shss to work the
+same way.
 
-**Nuance pour les commandes utilitaires (section suivante) :** `#@ models @#`,
-`#@ model <tag> @#` et `Ctrl-Y` ne peuvent lister/proposer que des modèles
-**déjà gérés par Ollama** — c'est le seul « registre » de modèles
-disponible sur disque, il n'y a pas d'équivalent générique pour un
-`.gguf` isolé. Sans Ollama, `#@ models @#` l'indique clairement et
-affiche quand même le modèle réellement actif (celui pointé par
-`SHSS_MODEL_PATH`) plutôt que de laisser croire qu'il n'y a rien de
-configuré ; pour changer de modèle dans ce cas, il faut changer
-`SHSS_MODEL_PATH` toi-même.
+**Caveat for the utility commands (next section):** `#@ models @#`,
+`#@ model <tag> @#` and `Ctrl-Y` can only list/offer models **already
+managed by Ollama** — that is the only model "registry" available on
+disk, there is no generic equivalent for a standalone `.gguf`. Without
+Ollama, `#@ models @#` says so clearly and still shows the actually active
+model (the one pointed at by `SHSS_MODEL_PATH`) rather than implying
+nothing is configured; to change model in that case, change
+`SHSS_MODEL_PATH` yourself.
 
-## Scripts et historique
+## Scripts and history
 
-Pour une demande trop complexe pour tenir sur une ligne (plusieurs
-étapes, transformation de fichier...), le modèle peut répondre par un
-script complet au lieu d'un fragment bash — il choisit lui-même le
-langage (Python, bash, ...) via la ligne shebang en tête de sa réponse
-(`#!/usr/bin/env python3`, `#!/usr/bin/env bash`, ...). Le script est
-écrit dans un fichier temporaire nommé par date + identifiant unique
-(`/tmp/shss-<uid>/20260830-161859_d80a29.py`), rendu exécutable, et
-c'est ce chemin qui remplace la balise dans la ligne :
+For a request too complex to fit on one line (several steps, a file
+transformation…), the model can answer with a full script instead of a
+bash fragment — it picks the language itself (Python, bash, …) via the
+shebang line at the top of its answer (`#!/usr/bin/env python3`,
+`#!/usr/bin/env bash`, …). The script is written to a temp file named by
+date + a unique id (`/tmp/shss-<uid>/20260830-161859_d80a29.py`), made
+executable, and that path replaces the tag in the line:
 
 ```bash
-#@ formate le fichier /tmp/dede.txt en json et écris le résultat dans /tmp/result.json @#
+#@ format the file /tmp/dede.txt as json and write the result to /tmp/result.json @#
 # → /tmp/shss-1000/20260830-161859_d80a29.py
 ```
 
-Testé en réel : fonctionne, mais avec les mêmes limites de fiabilité
-qu'ailleurs sur ce modèle 1.5B (ex: peut légèrement s'écarter du nom de
-fichier demandé, ou ne pas gérer une structure de données complexe).
+Tested for real: it works, but with the same reliability limits as
+elsewhere on this 1.5B model (e.g. it may drift slightly from the
+requested file name, or fail to handle a complex data structure).
 
-Pour aider le modèle à écrire un script adapté au **contenu réel** d'un
-fichier plutôt que de deviner, un aperçu (quelques premières lignes) de
-tout fichier explicitement nommé dans la demande est glissé dans le
-prompt caché (`src/shss/context.py::build_context`) — invisible pour
-l'utilisateur, qui ne voit toujours que ce qu'il tape. Sur un CSV avec
-en-tête, le résultat est net (utilise `csv.DictReader`, bons noms de
-clés) ; sur un format moins standard (ex: valeurs séparées par `;` sans
-en-tête), le modèle sait qu'il doit utiliser le module `csv` mais ne
-détecte pas toujours le bon séparateur tout seul. Volontairement, **aucun
-listing du dossier courant n'est ajouté par défaut** : une première
-version le faisait systématiquement et ça cassait des demandes simples
-sans rapport avec des fichiers (`ls #@ trie par taille @#` générait un
-résultat aberrant à cause de ce bruit non pertinent) — seul un fichier
-explicitement mentionné (et qui existe) déclenche un aperçu.
+To help the model write a script matched to the **actual content** of a
+file rather than guessing, a preview (first few lines) of any file
+explicitly named in the request is slipped into the hidden prompt
+(`src/shss/context.py::build_context`) — invisible to the user, who still
+only sees what they type. On a CSV with a header, the result is clean
+(uses `csv.DictReader`, good key names); on a less standard format (e.g.
+`;`-separated values with no header), the model knows it should use the
+`csv` module but does not always detect the right separator on its own.
+Deliberately, **no listing of the current directory is added by default**:
+an early version did it systematically and it broke simple requests
+unrelated to files (`ls #@ sort by size @#` produced a nonsensical result
+because of that irrelevant noise) — only a file explicitly mentioned (and
+that exists) triggers a preview.
 
-Chaque résolution (fragment ou script) est enregistrée dans un
-historique — `~/.shss/history.jsonl`, une ligne JSON par entrée
-(horodatage, demande, résultat, type) :
-
-```bash
-shss --history        # les 20 dernières résolutions
-shss --history 50     # les 50 dernières
-```
-
-`--history` n'a pas besoin de charger le modèle, donc c'est instantané.
-
-## Commandes utilitaires
-
-Certaines demandes entre `#@ ... @#` sont reconnues et traitées
-directement par shss — jamais envoyées au LLM, donc instantanées :
+Every resolution (fragment or script) is recorded in a history —
+`~/.shss/history.jsonl`, one JSON line per entry (timestamp, request,
+result, type):
 
 ```bash
-#@ models @#                # liste les modèles Ollama + curatés, indique l'actif
-#@ model 3b @#                # change de modèle (ex: 3b, ou deepseek-coder:1.3b)
-#@ model download 3b @#       # télécharge un modèle curaté (sans Ollama)
-#@ history 10 @#               # équivalent de shss --history 10
-#@ help @#                     # rappelle ces commandes
+shss --history        # the last 20 resolutions
+shss --history 50     # the last 50
 ```
 
-`#@ model <tag> @#` change le modèle pour la suite de la session **REPL**
-en cours ; en mode `-c` ou via `Ctrl-G` dans une console normale, chaque
-appel relance un process, donc le changement ne survit pas à cette seule
-résolution — exporte `SHSS_MODEL_TAG` dans `~/.bashrc` pour un
-changement permanent, ou utilise le sélecteur `Ctrl-Y` ci-dessous, qui
-lui persiste vraiment pour toute la session de terminal.
+`--history` does not need to load the model, so it is instant.
 
-### Modèles téléchargeables sans Ollama
+## Utility commands
 
-`#@ models @#` liste toujours, en plus des modèles Ollama, une liste
-**curatée** de modèles `qwen2.5-coder` téléchargeables directement
-depuis Hugging Face (URLs vérifiées à la main, Q4_K_M, sauf `0.5b` en
-Q8_0) — c'est la seule famille testée/fiable avec le prompt de ce projet
-(voir "Limites connues"). C'est ce qui répond au cas "pas d'Ollama
-installé" :
+Some requests between `#@ ... @#` are recognized and handled directly by
+shss — never sent to the LLM, so instant:
 
 ```bash
-#@ model download 3b @#   # télécharge ~1,9 Go
-#@ model 3b @#             # l'active pour la session REPL en cours
+#@ models @#                 # list Ollama + curated models, mark the active one
+#@ model 3b @#                # switch model (e.g. 3b, or deepseek-coder:1.3b)
+#@ model download 3b @#       # download a curated model (no Ollama)
+#@ history 10 @#              # same as shss --history 10
+#@ help @#                    # recall these commands
 ```
 
-Pour l'activer **en permanence** (y compris en mode `-c` et via
-`Ctrl-G`), une fois le fichier téléchargé :
+`#@ model <tag> @#` switches the model for the rest of the current
+**REPL** session; in `-c` mode or via `Ctrl-G` in a normal console, each
+call starts a fresh process, so the change does not survive that single
+resolution — export `SHSS_MODEL_TAG` in `~/.bashrc` for a permanent
+change, or use the `Ctrl-Y` picker below, which does persist for the whole
+terminal session.
+
+### Models downloadable without Ollama
+
+`#@ models @#` always lists, in addition to Ollama models, a **curated**
+list of `qwen2.5-coder` models downloadable directly from Hugging Face
+(URLs checked by hand, Q4_K_M, except `0.5b` in Q8_0) — that is the only
+family tested/reliable with this project's prompt (see "Known
+limitations"). This covers the "no Ollama installed" case:
 
 ```bash
-export SHSS_MODEL_TAG=3b   # dans ~/.bashrc ; discover_gguf_path() trouve
-                           # le modèle curaté déjà téléchargé
+#@ model download 3b @#   # downloads ~1.9 GB
+#@ model 3b @#             # activates it for the current REPL session
 ```
 
-Actuellement dans la liste : `0.5b` (~506 Mo, Q8_0), `1.5b-base`
-(~941 Mo, le défaut), `3b` (~1,9 Go), `7b` (~4,5 Go). `0.5b` est le plus
-léger (machine très contrainte, latence minimale) au prix d'une qualité
-plus faible sur les demandes composées. Le téléchargement est bloquant
-et peut prendre du temps selon la connexion ; il ne se déclenche **que**
-sur cette commande explicite, jamais automatiquement.
-
-**Licence des modèles.** `0.5b`, `1.5b-base` et `7b` sont sous
-**Apache 2.0** (usage libre, y compris commercial). `3b` fait exception :
-**Qwen Research License**, donc **usage non commercial / recherche
-uniquement** — c'est le seul de la liste dans ce cas. shss n'embarque
-aucun poids (il les télécharge depuis Hugging Face ou réutilise ceux
-d'Ollama), donc distribuer shss lui-même ne pose pas de question de
-licence modèle ; c'est l'usage que tu fais du modèle qui compte.
-
-**Stockage — partagé si possible, individuel sinon** (le fichier
-`.gguf` est partagé pour ne pas le retélécharger, mais **quel** modèle
-est actif reste toujours un choix individuel, par session) :
-
-- Lancé avec `sudo` (ex: `sudo shss -c '#@ model download 3b @#'`),
-  le téléchargement va dans `/opt/shss/models/` — un seul
-  téléchargement, **partagé par tous les utilisateurs de la machine**,
-  cohérent avec l'installation via le paquet Debian ("installé une
-  fois, tout le monde en bénéficie").
-- Sans `sudo`, il va dans `~/.shss/models/` (par utilisateur) — un
-  utilisateur normal ne peut pas écrire dans `/opt/shss/`.
-- `#@ models @#` et `#@ model <tag> @#` consultent toujours l'emplacement
-  partagé en premier, avant celui de l'utilisateur — si un admin a déjà
-  téléchargé un modèle pour tout le monde, personne d'autre n'a besoin
-  de le refaire.
-
-### Sélecteur de modèle interactif (Ctrl-Y)
-
-Si [`fzf`](https://github.com/junegunn/fzf) est installé
-(`sudo apt install fzf`), `Ctrl-Y` (dans une console où
-`shell-integration/shss.bash` est sourcé) ouvre une vraie liste
-filtrable/navigable au clavier des modèles disponibles. Le choix devient
-actif pour le reste de la session de terminal (`export
-SHSS_MODEL_NAME`/`SHSS_MODEL_TAG` dans le shell courant).
-
-Ça n'a été possible qu'après avoir vérifié que `fzf` gère correctement
-le terminal dans un contexte `bind -x` sur cette machine — contrairement
-à un `read` de bash, qui n'y arrivait pas (voir la section précédente
-sur la confirmation `Ctrl-G` retirée pour la même raison). `Ctrl-Y`
-écrase la liaison readline par défaut (`yank`, coller le dernier texte
-supprimé) — change la touche dans `shell-integration/shss.bash` si tu
-t'en sers.
-
-## Limites connues
-
-`qwen2.5-coder:1.5b-base` est un petit modèle base avec un prompt few-shot
-minimal (voir `src/shss/llm.py`) — il ne comprend pas toujours toute la
-demande, surtout si elle **combine plusieurs critères**. Exemple observé :
+To activate it **permanently** (including in `-c` mode and via `Ctrl-G`),
+once the file is downloaded:
 
 ```bash
-ls #@ affiche les fichiers textes classer par taille @#
-# → ls -S   (le tri est pris en compte, le filtre "fichiers textes" est ignoré)
+export SHSS_MODEL_TAG=3b   # in ~/.bashrc; discover_gguf_path() finds
+                           # the already-downloaded curated model
 ```
 
-Testé aussi avec un exemple few-shot dédié à ce cas précis (filtre +
-tri) : aucune amélioration, même sur une demande presque identique à
-l'exemple. Ce n'est donc pas un problème d'exemples manquants mais une
-limite de capacité du modèle 1.5B sur ce type de raisonnement composé —
-un modèle plus gros (3B/7B) serait nécessaire pour fiabiliser ce genre de
-demande, au prix d'une latence plus élevée.
+Currently in the list: `0.5b` (~506 MB, Q8_0), `1.5b-base` (~941 MB, the
+default), `3b` (~1.9 GB), `7b` (~4.5 GB). `0.5b` is the lightest (very
+constrained machine, minimal latency) at the cost of lower quality on
+compound requests. The download is blocking and can take a while
+depending on the connection; it only triggers on this explicit command,
+never automatically.
 
-Le mécanisme lui-même (détection des balises, injection en place,
-exécution) fonctionne correctement dans tous les cas testés — c'est la
-qualité de la génération qui varie selon la complexité de la demande.
+**Model licenses.** `0.5b`, `1.5b-base` and `7b` are under **Apache 2.0**
+(free use, including commercial). `3b` is the exception: **Qwen Research
+License**, so **non-commercial / research use only** — the only one in the
+list in that situation. shss ships no weights (it downloads them from
+Hugging Face or reuses Ollama's), so distributing shss itself raises no
+model-license question; what matters is how you use the model.
 
-Autre piège observé et corrigé : sans pénalité de répétition,
-`llama-cpp-python` peut faire boucler le modèle sur un motif dégénéré
-jusqu'à la coupure de `max_tokens` — ex. une demande complexe a généré
-`grep -E "^[^ ]+ [^ ]+ [^ ]+ ..."` répété des dizaines de fois, un
-fragment cassé (guillemet jamais fermé) qui bloquait bash en attente de
-la fin de la commande. `repeat_penalty=1.1` (voir `generate_bash` dans
-`llm.py`) corrige cette classe de bug ; une valeur plus agressive
-(testée à 1.3) a en revanche dégradé un cas qui marchait bien (fuite du
-caractère `█` du prompt dans un script généré) — `1.1` est le compromis
-retenu après ce test.
+**Storage — shared when possible, per-user otherwise** (the `.gguf` file
+is shared so it is not re-downloaded, but **which** model is active always
+stays an individual, per-session choice):
 
-## Structure du dépôt
+- Run with `sudo` (e.g. `sudo shss -c '#@ model download 3b @#'`), the
+  download goes to `/opt/shss/models/` — one download, **shared by all
+  users on the machine**, consistent with the Debian package install
+  ("installed once, everyone benefits").
+- Without `sudo`, it goes to `~/.shss/models/` (per-user) — a normal user
+  cannot write to `/opt/shss/`.
+- `#@ models @#` and `#@ model <tag> @#` always check the shared location
+  first, before the user's — if an admin already downloaded a model for
+  everyone, nobody else needs to redo it.
+
+### Interactive model picker (Ctrl-Y)
+
+If [`fzf`](https://github.com/junegunn/fzf) is installed
+(`sudo apt install fzf`), `Ctrl-Y` (in a console where
+`shell-integration/shss.bash` is sourced) opens a real
+filterable/keyboard-navigable list of the available models. The choice
+becomes active for the rest of the terminal session (`export
+SHSS_MODEL_NAME`/`SHSS_MODEL_TAG` in the current shell).
+
+This was only possible after checking that `fzf` handles the terminal
+correctly in a `bind -x` context on this machine — unlike bash's `read`,
+which could not (see the previous section on the `Ctrl-G` confirmation
+removed for the same reason). `Ctrl-Y` overrides the default readline
+binding (`yank`, paste the last killed text) — change the key in
+`shell-integration/shss.bash` if you use it.
+
+## Known limitations
+
+`qwen2.5-coder:1.5b-base` is a small base model with a minimal few-shot
+prompt (see `src/shss/llm.py`) — it does not always understand the whole
+request, especially when it **combines several criteria**. Observed
+example:
+
+```bash
+ls #@ show text files sorted by size @#
+# → ls -S   (the sort is taken into account, the "text files" filter is ignored)
+```
+
+Also tested with a few-shot example dedicated to that exact case (filter +
+sort): no improvement, even on a request almost identical to the example.
+So it is not a missing-examples problem but a capacity limit of the 1.5B
+model on that kind of compound reasoning — a bigger model (3B/7B) would be
+needed to make this kind of request reliable, at the cost of higher
+latency.
+
+The mechanism itself (tag detection, in-place injection, execution) works
+correctly in every tested case — it is the generation quality that varies
+with request complexity.
+
+Another pitfall observed and fixed: without a repetition penalty,
+`llama-cpp-python` can make the model loop on a degenerate pattern until
+the `max_tokens` cutoff — e.g. a complex request generated
+`grep -E "^[^ ]+ [^ ]+ [^ ]+ ..."` repeated dozens of times, a broken
+fragment (a quote never closed) that hung bash waiting for the end of the
+command. `repeat_penalty=1.1` (see `generate_bash` in `llm.py`) fixes that
+class of bug; a more aggressive value (tested at 1.3) instead degraded a
+case that worked well (the `█` prompt character leaking into a generated
+script) — `1.1` is the compromise kept after that test.
+
+## Repository layout
 
 ```text
-bin/shss                 point d'entrée bash du REPL (utilise .venv si présent)
-bin/shss-resolve-inline  point d'entrée pour l'intégration Ctrl-G dans bash
+bin/shss                 bash entry point for the REPL (uses .venv if present)
+bin/shss-resolve-inline  entry point for the Ctrl-G bash integration
 shell-integration/
-  shss.bash              à sourcer dans ~/.bashrc : Ctrl-G "natif", Ctrl-Y (fzf)
+  shss.bash              to source in ~/.bashrc: "native" Ctrl-G, Ctrl-Y (fzf)
 src/shss/
   cli.py                   REPL / -c / --history / --list-models, Ctrl-G
-  inline.py                résolution ponctuelle (utilisé par bin/shss-resolve-inline)
-  tags.py                  détection/remplacement des balises #@ ... @#
-  llm.py                   modèle GGUF, prompt, dispatch fragment/script, liste des modèles
-  commands.py              commandes utilitaires (models, model, history, help)
-  history.py               journal JSONL des résolutions (~/.shss/history.jsonl)
-  context.py               aperçu des fichiers mentionnés, injecté dans le prompt caché
-  shell.py                 session bash persistante (sentinel-based)
-tests/                     tests (ne chargent pas le modèle, sauf mention contraire)
+  inline.py                one-off resolution (used by bin/shss-resolve-inline)
+  tags.py                  detection/replacement of #@ ... @# tags
+  llm.py                   GGUF model, prompt, fragment/script dispatch, model list
+  commands.py              utility commands (models, model, history, help)
+  history.py               JSONL log of resolutions (~/.shss/history.jsonl)
+  context.py               preview of mentioned files, injected into the hidden prompt
+  shell.py                 persistent bash session (sentinel-based)
+tests/                     tests (do not load the model, unless noted otherwise)
 docs/                      documentation
 ```
 
-## Développement
+## Development
 
-Prérequis : Python 3.9+, bash, un modèle GGUF `qwen2.5-coder:1.5b-base`
-accessible (déjà présent via Ollama, ou `SHSS_MODEL_PATH`).
+Requirements: Python 3.9+, bash, an accessible `qwen2.5-coder:1.5b-base`
+GGUF model (already present through Ollama, or `SHSS_MODEL_PATH`).
 
 ```bash
 python3 -m venv .venv
@@ -473,10 +462,10 @@ python3 -m venv .venv
 ./.venv/bin/python -m pytest
 ```
 
-Les tests n'importent ni `llama-cpp-python` ni `prompt_toolkit` (import
-différé partout), donc `pip install -r requirements-dev.txt` seul suffit
-pour lancer `pytest`.
+The tests import neither `llama-cpp-python` nor `prompt_toolkit` (deferred
+imports everywhere), so `pip install -r requirements-dev.txt` alone is
+enough to run `pytest`.
 
-## Licence
+## License
 
-Apache License 2.0 — voir [LICENSE](LICENSE).
+Apache License 2.0 — see [LICENSE](LICENSE).

@@ -108,7 +108,7 @@ Ces trois-là marchent bien avec le modèle 1.5B actuel (testés et vérifiés :
 `date`, `ls -S`, `find src -iname "*.py"`). D'autres demandes
 plus ambiguës (ex: mélanger `echo texte` + une vraie commande sur la même
 ligne) peuvent donner un résultat bizarre — voir la limite connue dans le
-README. C'est normal avec un petit modèle base et un prompt few-shot
+LISEZMOI. C'est normal avec un petit modèle base et un prompt few-shot
 minimal, pas un bug du mécanisme de balises/exécution.
 
 ## 6. Mode console interactive (REPL)
@@ -294,7 +294,7 @@ indique juste la commande à taper plutôt que de télécharger tout seul).
 C'est la réponse au cas "pas d'Ollama installé" : sans lui, `models` /
 `model <tag>` seuls ne peuvent rien proposer d'autre qu'indiquer le
 modèle réellement actif (`SHSS_MODEL_PATH`) — voir "Nuance" dans le
-README, section Modèle LLM.
+LISEZMOI, section Modèle LLM.
 
 **Stockage partagé (« installé une fois, tout le monde en profite »).**
 Le fichier `.gguf` lui-même peut être partagé par toute la machine, mais
@@ -393,7 +393,7 @@ Le rôle précis de chaque fichier :
     `kind="builtin"`). Sinon, charge le modèle au premier appel (lazy),
     appelle `context.build_context(request)` puis construit le prompt,
     appelle `llama_cpp.Llama(...)` (avec `repeat_penalty=1.1` — voir
-    "Limites connues" dans le README pour le bug de répétition dégénérée
+    "Limites connues" dans le LISEZMOI pour le bug de répétition dégénérée
     que ça corrige). Détermine le texte à afficher/utiliser (script
     entier si la réponse commence par `#!`, sinon sa première ligne). Si
     `confirm` est fourni, l'appelle avec ce texte ; un retour faux lève
@@ -510,7 +510,7 @@ d'où le `python3 -m venv .venv` plutôt qu'un `pip install` direct.
 | --- | --- | --- |
 | `FileNotFoundError: GGUF introuvable` | modèle non trouvé | voir étape 3 / section 11 |
 | Réponse lente au premier appel | chargement du modèle | normal, ~2-4s |
-| Ligne exécutée bizarre après résolution | modèle 1.5B + prompt minimal | voir "Limite connue" dans le README |
+| Ligne exécutée bizarre après résolution | modèle 1.5B + prompt minimal | voir "Limite connue" dans le LISEZMOI |
 | `ModuleNotFoundError: llama_cpp` | venv pas utilisé | vérifier que `.venv/bin/python` existe et que `bin/shss` le détecte |
 | `Ctrl-G` ne fait rien dans mon terminal | `shell-integration/shss.bash` pas sourcé | vérifier `~/.bashrc`, ouvrir un nouveau terminal |
 | `#@ ... @#` exécuté tel quel / ignoré silencieusement | Entrée pressée sans passer par `Ctrl-G` d'abord | toujours résoudre avec `Ctrl-G` avant Entrée (voir section 7) |

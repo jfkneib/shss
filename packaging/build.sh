@@ -22,6 +22,7 @@ cp -r "$REPO_ROOT/tests" "$STAGE/opt/shss/tests"
 cp -r "$REPO_ROOT/docs" "$STAGE/opt/shss/docs"
 cp "$REPO_ROOT/requirements.txt" "$STAGE/opt/shss/requirements.txt"
 cp "$REPO_ROOT/README.md" "$STAGE/opt/shss/README.md"
+cp "$REPO_ROOT/LISEZMOI.md" "$STAGE/opt/shss/LISEZMOI.md"
 cp "$REPO_ROOT/LICENSE" "$STAGE/opt/shss/LICENSE"
 mkdir -p "$STAGE/opt/shss/model"
 
