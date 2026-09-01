@@ -1,5 +1,7 @@
 # shss
 
+***SH**ell **S**imple **S**uggestion*
+
 Console bash augmentée : dans n'importe quelle ligne, un bloc `#@ demande @#`
 est résolu par un petit LLM local avant exécution, et remplacé en place par
 du bash. Le reste de la ligne est du bash normal, exécuté dans une vraie
