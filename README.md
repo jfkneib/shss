@@ -363,6 +363,14 @@ plus faible sur les demandes composées. Le téléchargement est bloquant
 et peut prendre du temps selon la connexion ; il ne se déclenche **que**
 sur cette commande explicite, jamais automatiquement.
 
+**Licence des modèles.** `0.5b`, `1.5b-base` et `7b` sont sous
+**Apache 2.0** (usage libre, y compris commercial). `3b` fait exception :
+**Qwen Research License**, donc **usage non commercial / recherche
+uniquement** — c'est le seul de la liste dans ce cas. shss n'embarque
+aucun poids (il les télécharge depuis Hugging Face ou réutilise ceux
+d'Ollama), donc distribuer shss lui-même ne pose pas de question de
+licence modèle ; c'est l'usage que tu fais du modèle qui compte.
+
 **Stockage — partagé si possible, individuel sinon** (le fichier
 `.gguf` est partagé pour ne pas le retélécharger, mais **quel** modèle
 est actif reste toujours un choix individuel, par session) :

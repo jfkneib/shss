@@ -37,6 +37,10 @@ SCRIPT_DIR = Path(tempfile.gettempdir()) / f"shss-{os.getuid()}"
 # d'autres familles à taille comparable ont donné de moins bons
 # résultats avec ce même prompt). Quantization Q4_K_M pour chaque taille,
 # URLs vérifiées manuellement (HEAD request) avant d'être codées en dur.
+#
+# Licences : 0.5b / 1.5b-base / 7b sont sous Apache 2.0. Le 3b est
+# l'exception : Qwen Research License (non commercial / recherche). Voir
+# "Licence des modèles" dans le README.
 CURATED_MODEL_FAMILY = "qwen2.5-coder"
 CURATED_MODELS = {
     # Le plus petit : modèle *base* 0.5B (Qwen ne publie le 0.5B qu'en
