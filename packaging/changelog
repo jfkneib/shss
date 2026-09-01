@@ -1,3 +1,13 @@
+shss (0.2.3) unstable; urgency=low
+
+  * `shss --list-models` (et donc le selecteur Ctrl-Y) inclut aussi les
+    modeles curates deja telecharges -- Ctrl-Y etait vide sur une
+    machine sans Ollama.
+  * Ctrl-Y : message explicite quand aucun modele n'est selectionnable,
+    au lieu d'un fzf vide.
+
+ -- Jean-Francois Kneib <kneib.jean-francois@cegetel.net>  Mon, 01 Sep 2026 17:30:00 +0200
+
 shss (0.2.2) unstable; urgency=low
 
   * `#@ models @#` marque aussi « (actif) » le modele curate en cours

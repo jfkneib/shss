@@ -60,11 +60,20 @@ shss_pick_model() {
         return
     fi
 
-    local choice name tag
-    choice=$("$_SHSS_ROOT/bin/shss" --list-models | fzf --prompt="shss modele > " --height=40% --reverse)
+    local models choice name tag
+    models=$("$_SHSS_ROOT/bin/shss" --list-models)
+
+    if [ -z "$models" ]; then
+        echo
+        echo "shss: aucun modele selectionnable (pas d'Ollama, aucun modele curate telecharge)."
+        echo "shss: telecharge-en un avec  #@ model download <tag> @#  (ex: 0.5b, 3b, 7b)."
+        return
+    fi
+
+    choice=$(printf '%s\n' "$models" | fzf --prompt="shss modele > " --height=40% --reverse)
 
     if [ -z "$choice" ]; then
-        return  # Echap ou liste vide : rien ne change
+        return  # Echap : rien ne change
     fi
 
     name=${choice%%:*}

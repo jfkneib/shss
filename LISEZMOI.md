@@ -18,7 +18,7 @@ page de manuel) sans manipulation manuelle :
 
 ```bash
 ./packaging/build.sh
-sudo apt install ./shss_0.2.2_all.deb
+sudo apt install ./shss_0.2.3_all.deb
 ```
 
 Le paquet installe dans `/opt/shss/` (venv Python, modèle, code), les
@@ -399,9 +399,12 @@ est actif reste toujours un choix individuel, par session) :
 Si [`fzf`](https://github.com/junegunn/fzf) est installé
 (`sudo apt install fzf`), `Ctrl-Y` (dans une console où
 `shell-integration/shss.bash` est sourcé) ouvre une vraie liste
-filtrable/navigable au clavier des modèles disponibles. Le choix devient
+filtrable/navigable au clavier des modèles **activables** : ceux gérés
+par Ollama, plus les modèles curatés déjà téléchargés. Le choix devient
 actif pour le reste de la session de terminal (`export
-SHSS_MODEL_NAME`/`SHSS_MODEL_TAG` dans le shell courant).
+SHSS_MODEL_NAME`/`SHSS_MODEL_TAG` dans le shell courant). Si la liste est
+vide (pas d'Ollama, aucun modèle curaté téléchargé), `Ctrl-Y` l'indique
+et rappelle `#@ model download <tag> @#`.
 
 Ça n'a été possible qu'après avoir vérifié que `fzf` gère correctement
 le terminal dans un contexte `bind -x` sur cette machine — contrairement

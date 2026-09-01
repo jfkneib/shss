@@ -119,11 +119,32 @@ def print_history(limit: int) -> int:
 def print_models() -> int:
     """One "name:tag" per line, plain — meant for piping (e.g. into
     fzf, see shell-integration/shss.bash's model picker), as well as
-    for direct use."""
-    from .llm import list_local_models
+    for direct use.
 
+    Lists every model that can actually be switched to right now: the
+    Ollama-managed ones, plus any curated model already downloaded (a
+    machine without Ollama would otherwise get an empty list even after
+    `#@ model download <tag> @#`). Curated models not yet downloaded are
+    left out on purpose — `#@ models @#` shows those, with their size.
+    """
+    from pathlib import Path
+
+    from .llm import (
+        CURATED_MODEL_FAMILY,
+        CURATED_MODELS,
+        curated_model_path,
+        list_local_models,
+    )
+
+    seen = set()
     for name, tag in list_local_models():
         print(f"{name}:{tag}")
+        seen.add((name, tag))
+
+    for tag in CURATED_MODELS:
+        key = (CURATED_MODEL_FAMILY, tag)
+        if key not in seen and Path(curated_model_path(tag)).is_file():
+            print(f"{CURATED_MODEL_FAMILY}:{tag}")
     return 0
 
 
@@ -152,7 +173,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--list-models",
         action="store_true",
-        help="Liste les modèles Ollama disponibles (une ligne 'nom:tag' par modèle) puis quitte.",
+        help=(
+            "Liste les modèles activables (Ollama + curatés téléchargés), "
+            "une ligne 'nom:tag' par modèle, puis quitte."
+        ),
     )
     return parser
 

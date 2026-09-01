@@ -21,7 +21,7 @@ in `~/.bashrc`, a man page) with no manual steps:
 
 ```bash
 ./packaging/build.sh
-sudo apt install ./shss_0.2.2_all.deb
+sudo apt install ./shss_0.2.3_all.deb
 ```
 
 The package installs into `/opt/shss/` (Python venv, model, code), the
@@ -387,9 +387,12 @@ stays an individual, per-session choice):
 If [`fzf`](https://github.com/junegunn/fzf) is installed
 (`sudo apt install fzf`), `Ctrl-Y` (in a console where
 `shell-integration/shss.bash` is sourced) opens a real
-filterable/keyboard-navigable list of the available models. The choice
-becomes active for the rest of the terminal session (`export
-SHSS_MODEL_NAME`/`SHSS_MODEL_TAG` in the current shell).
+filterable/keyboard-navigable list of the **switchable** models: the
+Ollama-managed ones, plus any curated model already downloaded. The
+choice becomes active for the rest of the terminal session (`export
+SHSS_MODEL_NAME`/`SHSS_MODEL_TAG` in the current shell). If the list is
+empty (no Ollama, no curated model downloaded), `Ctrl-Y` says so and
+points at `#@ model download <tag> @#`.
 
 This was only possible after checking that `fzf` handles the terminal
 correctly in a `bind -x` context on this machine — unlike bash's `read`,
