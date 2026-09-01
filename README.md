@@ -136,33 +136,22 @@ version: `sudo apt install --reinstall ./shss_<version>_all.deb`.
 
 On every `v*` tag, CI publishes the `.deb` both as an asset on the
 [Release](https://github.com/jfkneib/shss/releases) **and** in a flat apt
-repo on the `apt` branch. Since the GitHub repo is private, apt
-authenticates to it with a personal token (`repo` scope, read-only is
-enough):
+repo on the `apt` branch:
 
 ```bash
-# 1. authentication (token in a root-only readable file)
-sudo tee /etc/apt/auth.conf.d/shss.conf >/dev/null <<'EOF'
-machine raw.githubusercontent.com
-login x-access-token
-password ghp_YOUR_TOKEN_HERE
-EOF
-sudo chmod 600 /etc/apt/auth.conf.d/shss.conf
-
-# 2. the apt source
 echo 'deb [trusted=yes] https://raw.githubusercontent.com/jfkneib/shss/apt/ ./' \
   | sudo tee /etc/apt/sources.list.d/shss.list
-
-# 3. install, then update like any other package
 sudo apt update && sudo apt install shss
 sudo apt upgrade            # on every new release
 ```
 
 Notes:
 
+- the repo is public, so no authentication is needed; on a **private**
+  fork, add a token in `/etc/apt/auth.conf.d/` (`machine
+  raw.githubusercontent.com` / `login x-access-token` / `password
+  <PAT>`).
 - `[trusted=yes]`: the repo is not GPG-signed yet (to be added).
-- the auth file applies to **all** of `raw.githubusercontent.com` —
-  acceptable on a personal machine.
 - `raw.githubusercontent.com` has a CDN cache (~5 min): an `apt update`
   right after a release may not see the new version immediately.
 
