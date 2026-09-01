@@ -93,6 +93,11 @@ chaque tag `v*` (`ghcr.io/jfkneib/shss:<version>` + `:latest`) et sur
 `main` (`:edge`) — voir [.github/workflows/docker.yml](.github/workflows/docker.yml) ;
 l'image `cuda` se construit en local.
 
+**Podman** : `podman` remplace `docker` dans toutes les commandes
+ci-dessus (`podman build`, `podman compose build`, `podman pull …`).
+Pour le GPU, podman utilise `--device nvidia.com/gpu=all` au lieu de
+`--gpus all` ; `run.sh` reste spécifique à Docker.
+
 ### Réglage des performances (variables d'env)
 
 | Variable | Effet |
