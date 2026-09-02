@@ -107,7 +107,9 @@ transformation de données, etc). Pour un script, commence directement par
 une ligne shebang comme #!/usr/bin/env python3 ou #!/usr/bin/env bash, et
 choisis le langage le plus adapté. Le script s'exécute seul, sans aucun
 argument en ligne de commande : n'utilise jamais sys.argv ni $1/$2, écris
-en dur dans le code les noms de fichiers mentionnés dans la demande.
+en dur dans le code les noms de fichiers mentionnés dans la demande. Si
+la demande ne nomme aucun fichier de sortie, imprime le résultat
+(print / echo) — n'écris pas de fichier.
 Sinon, réponds par du bash sur une seule ligne, sans explication. Une
 ligne "Contexte" peut donner le contenu réel d'un fichier mentionné :
 utilise-le pour écrire un code adapté (ex: le bon séparateur de colonnes)

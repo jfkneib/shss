@@ -15,7 +15,7 @@ de `src/shss/__init__.py`). Le script assemble un dossier temporaire
 ## Installer / désinstaller
 
 ```bash
-sudo apt install ./shss_0.2.5_all.deb   # ou : sudo dpkg -i ...
+sudo apt install ./shss_0.2.6_all.deb   # ou : sudo dpkg -i ...
 sudo apt remove shss                     # garde le modèle et le venv
 sudo apt purge shss                      # supprime aussi le modèle
 ```
@@ -54,7 +54,7 @@ avoir cherché du côté d'Ollama et de `SHSS_MODEL_PATH`.
 
 ## Notes de test / lintian
 
-`lintian shss_0.2.5_all.deb` remonte deux catégories de messages sans
+`lintian shss_0.2.6_all.deb` remonte deux catégories de messages sans
 rapport avec un vrai défaut du paquet :
 
 - `dir-or-file-in-opt` — lintian signale par principe tout usage de

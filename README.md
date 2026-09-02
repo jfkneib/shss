@@ -21,7 +21,7 @@ in `~/.bashrc`, a man page) with no manual steps:
 
 ```bash
 ./packaging/build.sh
-sudo apt install ./shss_0.2.5_all.deb
+sudo apt install ./shss_0.2.6_all.deb
 ```
 
 The package installs into `/opt/shss/` (Python venv, model, code), the

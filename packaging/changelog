@@ -1,3 +1,13 @@
+shss (0.2.6) unstable; urgency=low
+
+  * Prompt : un script genere pour une demande qui ne nomme aucun
+    fichier de sortie imprime le resultat (print / echo) au lieu de
+    creer des fichiers .json muets -- evite le cas "le script tourne
+    mais n'affiche rien". Les demandes "ecris dans <fichier>" ecrivent
+    toujours le fichier.
+
+ -- Jean-Francois Kneib <kneib.jean-francois@cegetel.net>  Tue, 02 Sep 2026 17:15:00 +0200
+
 shss (0.2.5) unstable; urgency=low
 
   * Commandes model : accepte « modele » / « modèle » au singulier
