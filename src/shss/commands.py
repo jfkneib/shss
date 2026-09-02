@@ -160,26 +160,40 @@ def _format_history(limit: int) -> str:
     return "\n".join(lines)
 
 
+# "models" (liste) et "model" (changement) sont proches -- accepter les
+# deux orthographes FR/EN, et renvoyer une aide plutot que de laisser
+# filer au LLM quand c'est presque bon (`models 3b`, `modele` seul...).
+_MODEL_LIST_WORDS = ("models", "modeles", "modèles")
+_MODEL_SWITCH_WORDS = ("model", "modele", "modèle")
+
+
 def try_builtin(request: str, mini_llm):
     """Return the replacement text if `request` is a recognized builtin
     command, else None (the caller should fall through to the LLM)."""
     cmd = request.strip()
     lower = cmd.lower()
+    head, _, rest = cmd.partition(" ")
+    head_lower = head.lower()
+    rest = rest.strip()
 
-    if lower in ("models", "modeles", "modèles"):
+    if head_lower in _MODEL_LIST_WORDS:
+        if rest:
+            return (
+                f"shss: « {head} » liste les modeles, sans argument. Pour en "
+                "changer, « model » au singulier : #@ model <tag> @#\n"
+                "(ex: #@ model 3b @#  ;  #@ models @# pour la liste)"
+            )
         return _format_models_list(mini_llm)
 
-    if lower == "model":
-        return (
-            "shss: precise un tag -- #@ model <tag> @#  (ex: #@ model 3b @#)\n"
-            "Voir aussi #@ models @# pour la liste, ou Ctrl-Y pour un selecteur interactif."
-        )
-
-    if lower.startswith("model download "):
-        return _format_download_model(cmd[len("model download "):].strip())
-
-    if lower.startswith("model "):
-        return _format_switch_model(mini_llm, cmd[len("model "):].strip())
+    if head_lower in _MODEL_SWITCH_WORDS:
+        if not rest:
+            return (
+                "shss: precise un tag -- #@ model <tag> @#  (ex: #@ model 3b @#)\n"
+                "Voir aussi #@ models @# pour la liste, ou Ctrl-Y pour un selecteur interactif."
+            )
+        if rest.lower().startswith("download "):
+            return _format_download_model(rest[len("download "):].strip())
+        return _format_switch_model(mini_llm, rest)
 
     if lower == "history" or lower.startswith("history "):
         parts = cmd.split()

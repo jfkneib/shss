@@ -18,7 +18,7 @@ page de manuel) sans manipulation manuelle :
 
 ```bash
 ./packaging/build.sh
-sudo apt install ./shss_0.2.4_all.deb
+sudo apt install ./shss_0.2.5_all.deb
 ```
 
 Le paquet installe dans `/opt/shss/` (venv Python, modèle, code), les

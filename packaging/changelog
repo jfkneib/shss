@@ -1,3 +1,11 @@
+shss (0.2.5) unstable; urgency=low
+
+  * Commandes model : accepte « modele » / « modèle » au singulier
+    (FR) ; « models <tag> » (au lieu de « model <tag> ») repond une aide
+    au lieu de partir au LLM et generer un script bidon.
+
+ -- Jean-Francois Kneib <kneib.jean-francois@cegetel.net>  Tue, 02 Sep 2026 09:00:00 +0200
+
 shss (0.2.4) unstable; urgency=low
 
   * #@ model <tag> @# / #@ model download <tag> @# : si le tag contient

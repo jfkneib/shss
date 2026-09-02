@@ -78,6 +78,20 @@ def test_models_marks_the_active_curated_model(monkeypatch, tmp_path):
     assert "- 1.5b-base (~941 Mo)" in lines
 
 
+def test_models_with_an_argument_points_at_the_singular():
+    mini = _FakeMiniLLM()
+    out = try_builtin("models 3b", mini)
+    assert out is not None
+    assert mini.switched_to is None
+    assert "model" in out and "3b" in out
+
+
+def test_model_french_singular_switches():
+    mini = _FakeMiniLLM()
+    try_builtin("modele 3b", mini)
+    assert mini.switched_to == (None, "3b")
+
+
 def test_model_command_rejects_a_malformed_tag_with_a_delimiter_hint():
     # `#@ model 3b @"` (AZERTY: `"` au lieu de `#`) fait arriver `@"` ici.
     mini = _FakeMiniLLM()
