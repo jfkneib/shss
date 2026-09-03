@@ -25,12 +25,26 @@ _SHSS_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 _SHSS_RESOLVE_INLINE="$_SHSS_ROOT/bin/shss-resolve-inline"
 
 shss_resolve_tag() {
-    local out new_line new_point display
+    local out new_line new_point display original_line
+
+    original_line="$READLINE_LINE"
 
     out=$("$_SHSS_RESOLVE_INLINE" "$READLINE_LINE" "$READLINE_POINT") || return
     new_line=$(sed -n '1p' <<<"$out")
     new_point=$(sed -n '2p' <<<"$out")
     display=$(tail -n +3 <<<"$out")
+
+    # Garde la ligne "#@ ... @#" d'origine dans l'historique bash (flèche
+    # haut, `history`) avant de l'écraser par le résultat résolu --
+    # sinon, dès qu'on appuie sur Entrée, bash n'a jamais vu que la ligne
+    # déjà résolue : la demande en langage naturel est perdue, impossible
+    # de la "rejouer" (remonter dessus, Ctrl-G à nouveau) sans aller la
+    # rechercher via #@ history @#. `history -s` ajoute une entrée sans
+    # l'exécuter ; seulement si une résolution a vraiment eu lieu (sinon
+    # on doublonnerait l'entrée que bash ajoute déjà tout seul à Entrée).
+    if [ "$new_line" != "$original_line" ]; then
+        history -s "$original_line"
+    fi
 
     # Pas de confirmation interactive ici (contrairement au REPL) : lire
     # une réponse au clavier depuis une fonction bind -x s'est révélé peu
