@@ -236,6 +236,10 @@ class _FakeLlama:
 def _fake_shss(monkeypatch, tmp_path, fake_text):
     monkeypatch.setenv("SHSS_HISTORY_PATH", str(tmp_path / "history.jsonl"))
     monkeypatch.setattr(llm_module, "SCRIPT_DIR", tmp_path / "scripts")
+    # Base de cas curates isolee (vide) : jamais ~/.shss/cases.json reel,
+    # meme s'il existe sur la machine qui fait tourner les tests.
+    monkeypatch.setenv("SHSS_CASES_PATH", str(tmp_path / "cases.json"))
+    monkeypatch.setenv("SHSS_CASES_CACHE_PATH", str(tmp_path / "cases.embeddings.json"))
 
     instance = llm_module.MiniLLM.__new__(llm_module.MiniLLM)
     instance._llm = _FakeLlama(fake_text)
@@ -302,4 +306,47 @@ def test_generate_bash_confirm_false_cancels_without_side_effects(monkeypatch, t
         pass
 
     assert read_events() == []
+
+
+def test_generate_bash_uses_confident_case_match_without_calling_llm(monkeypatch, tmp_path):
+    import shss.cases as cases_module
+    from shss.history import read_events
+
+    llm = _fake_shss(monkeypatch, tmp_path, "ne devrait jamais etre lu")
+    case = {"id": "energie", "requests": ["x"], "script": "#!/usr/bin/env bash\necho watts\n"}
+    monkeypatch.setattr(cases_module, "best_match", lambda request, **kw: (case, 0.9))
+
+    result = llm.generate_bash("energie consommee par le pc")
+
+    assert Path(result).read_text() == case["script"]
+    assert llm._llm.last_prompt is None  # le LLM de generation n'a jamais tourne
+    events = read_events()
+    assert events[0]["kind"] == "case"
+    assert events[0]["result"] == result
+
+
+def test_generate_bash_falls_through_to_llm_without_confident_case_match(monkeypatch, tmp_path):
+    import shss.cases as cases_module
+
+    llm = _fake_shss(monkeypatch, tmp_path, "-S")
+    monkeypatch.setattr(cases_module, "best_match", lambda request, **kw: None)
+
+    result = llm.generate_bash("trie par taille", "ls ", "")
+
+    assert result == "-S"
+    assert llm._llm.last_prompt is not None
+
+
+def test_generate_bash_case_match_still_honors_confirm(monkeypatch, tmp_path):
+    import shss.cases as cases_module
+
+    llm = _fake_shss(monkeypatch, tmp_path, "ne devrait jamais etre lu")
+    case = {"id": "energie", "requests": ["x"], "script": "#!/usr/bin/env bash\necho watts\n"}
+    monkeypatch.setattr(cases_module, "best_match", lambda request, **kw: (case, 0.9))
+
+    try:
+        llm.generate_bash("energie consommee par le pc", confirm=lambda text: False)
+        assert False, "devrait lever ResolutionCancelled"
+    except ResolutionCancelled:
+        pass
     assert not (tmp_path / "scripts").exists()

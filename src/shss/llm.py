@@ -431,7 +431,12 @@ class MiniLLM:
         `request` is checked against built-in commands (see commands.py)
         first — "models", "model <tag>", "history [N]", "help" — which
         never touch the LLM at all and never ask for confirmation
-        (deterministic, instant, nothing to review).
+        (deterministic, instant, nothing to review). Then against the
+        curated cases store (see cases.py): a confident match reuses a
+        hand-written script as-is, still skipping the generation model
+        entirely — this is what makes Ctrl-G, the REPL and -c mode all
+        benefit the same way, with no extra wiring per caller: they all
+        go through this one method.
         """
         request = request.strip()
 
@@ -441,6 +446,18 @@ class MiniLLM:
         if builtin_output is not None:
             result = _write_script(_as_display_script(builtin_output))
             log_event(request, prefix, suffix, result, "builtin")
+            return result
+
+        from .cases import best_match
+
+        match = best_match(request)
+        if match is not None:
+            case, _score = match
+            text = case["script"]
+            if confirm is not None and not confirm(text):
+                raise ResolutionCancelled()
+            result = _write_script(text)
+            log_event(request, prefix, suffix, result, "case")
             return result
 
         self._ensure_loaded()
