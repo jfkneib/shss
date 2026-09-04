@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+#
+# pc-pkg-info -- logiciels installes (Debian/Ubuntu, apt/dpkg) : pas
+# un inventaire complet (4000+ paquets sur une machine typique, sans
+# grand interet a lister un par un) mais ce qui demande une action --
+# mises a jour disponibles, paquets casses, paquets orphelins
+# (auto-removable).
+
+set -u
+export LC_NUMERIC=C
+# LC_ALL=C seulement DEVANT les commandes apt/dpkg parsees (voir plus
+# bas), jamais en export global : ca cassait aussi ${#texte} pour nos
+# propres labels accentues (compte des octets, pas des caracteres,
+# sous la locale C) -- constate en pratique, "Paquets cassés" desalignait
+# alors que "Orphelins" (sans accent) restait correct. Meme famille de
+# bug que le %-Ns de printf, cause differente cette fois.
+
+for cmd in dpkg apt-get apt-cache; do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+        echo "pc-pkg-info: $cmd est requis (systeme Debian/Ubuntu uniquement)" >&2
+        exit 1
+    fi
+done
+
+label()
+{
+    local text="$1"
+    local width="$2"
+    local n=$(( width - ${#text} ))
+    (( n < 0 )) && n=0
+    printf '%s%*s: ' "$text" "$n" ""
+}
+
+main()
+{
+    echo "############################################################"
+    echo "                LOGICIELS INSTALLÉS"
+    echo "Machine : $(hostname)"
+    echo "############################################################"
+    echo
+
+    local installed_n
+    installed_n=$(LC_ALL=C dpkg-query -W -f='${Package}\n' 2>/dev/null | wc -l)
+
+    local upgradable
+    upgradable=$(LC_ALL=C apt list --upgradable 2>/dev/null | grep -v "^Listing...")
+
+    local broken
+    broken=$(LC_ALL=C dpkg --audit 2>&1)
+
+    local orphans
+    orphans=$(LC_ALL=C apt-get autoremove --dry-run 2>/dev/null | grep "^Remv")
+
+    local upgradable_n=0 orphans_n=0
+    [[ -n "$upgradable" ]] && upgradable_n=$(wc -l <<<"$upgradable")
+    [[ -n "$orphans" ]] && orphans_n=$(wc -l <<<"$orphans")
+
+    echo "Résumé"
+    echo "------------------------------------------------------------"
+    echo "$(label "Paquets installés" 22)$installed_n"
+    echo "$(label "Mises à jour dispo" 22)$upgradable_n"
+    echo "$(label "Paquets cassés" 22)$([[ -z "$broken" ]] && echo 0 || wc -l <<<"$broken")"
+    echo "$(label "Orphelins" 22)$orphans_n"
+    echo
+
+    if [[ -n "$upgradable" ]]; then
+        echo "Mises à jour disponibles :"
+        echo "------------------------------------------------------------"
+        while IFS= read -r line; do
+            local pkg newver oldver
+            pkg=$(cut -d/ -f1 <<<"$line")
+            newver=$(awk '{print $2}' <<<"$line")
+            oldver=$(sed -n 's/.*upgradable from: \(.*\)\]/\1/p' <<<"$line")
+            printf "  %-30s %s -> %s\n" "$pkg" "${oldver:-?}" "$newver"
+        done <<<"$upgradable"
+        echo
+    fi
+
+    if [[ -n "$broken" ]]; then
+        echo "Paquets cassés :"
+        echo "------------------------------------------------------------"
+        echo "$broken"
+        echo
+    fi
+
+    if [[ -n "$orphans" ]]; then
+        echo "Paquets orphelins (candidats à la suppression automatique) :"
+        echo "------------------------------------------------------------"
+        while IFS= read -r line; do
+            echo "  $(awk '{print $2, $3}' <<<"$line")"
+        done <<<"$orphans"
+        echo "  (sudo apt autoremove pour les retirer, après vérification)"
+        echo
+    fi
+}
+
+main "$@"
