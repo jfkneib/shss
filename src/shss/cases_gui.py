@@ -242,6 +242,13 @@ class _CaseDialog:
         win.transient(app.root)
         self.win = win
 
+        # Un Toplevel n'a pas garanti le focus clavier a l'ouverture sur
+        # tous les gestionnaires de fenetres -- sans ca, taper semblait
+        # ne rien faire (les touches allaient ailleurs, ou nulle part).
+        win.lift()
+        win.focus_force()
+        win.grab_set()  # modal : force a fermer cette fenetre avant de revenir a la liste
+
         frame = ttk.Frame(win, padding=10)
         frame.pack(fill="both", expand=True)
 
@@ -305,6 +312,11 @@ class _CaseDialog:
             self.script_text.insert("1.0", existing["script"])
         else:
             self.script_text.insert("1.0", "#!/usr/bin/env bash\n")
+
+        # Focus initial sur le script : c'est le champ le plus souvent
+        # a modifier, et ca confirme visuellement (curseur clignotant)
+        # que la fenetre a bien le clavier.
+        self.script_text.focus_set()
 
     def _load_file(self):
         from tkinter import filedialog
