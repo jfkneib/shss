@@ -73,7 +73,43 @@ par exemple, sans retoucher le script ni les formulations :
 ./bin/shss-cases edit energie --note "RAPL = CPU seulement, pas le total"
 ```
 
-## 4. Interface graphique
+## 4. Cas « gabarit » : quand le contenu varie à chaque demande
+
+Un cas curaté classique (`energie`) répond toujours la même chose. Mais
+parfois ce qui doit changer, c'est un *contenu* que la demande porte
+elle-même — par exemple corriger un texte SQL collé entre guillemets,
+différent à chaque fois : `#@ corrige moi ma ligne bash : "select | id
+from t" @#`. Un script figé ne généralise pas à ce cas ; demander au
+LLM de recopier fidèlement le texte dans le script généré ne marche pas
+non plus (c'est justement là qu'il se plante le plus).
+
+Solution : `--stdin` sur `add`/`edit`. Le contenu entre le premier
+guillemet ouvrant et fermant de la demande (simple ou double) est :
+
+1. **remplacé par un marqueur fixe avant le calcul de similarité** —
+   deux demandes qui ne diffèrent que par ce contenu matchent le même
+   cas, quel que soit ce contenu ;
+2. **transmis au script sur son entrée standard** au moment de
+   l'exécution — jamais collé dans le code du script : aucun risque
+   d'injection, même si le contenu contient des guillemets, des `$(...)`,
+   etc.
+
+```bash
+./bin/shss-cases add fix-select --stdin \
+    --request 'corrige moi ma ligne bash : "select | id from t"'
+# colle un script qui lit sys.stdin.read() (ou `read` en bash)
+```
+
+Résolu, ça donne une ligne comme :
+
+```text
+printf '%s' 'select | id | name |   from itsmlocal.glpi_entities;' | /tmp/shss-.../fix.py
+```
+
+— pas juste le chemin du script : le `printf | script` fait partie du
+résultat, avec le contenu correctement échappé pour bash (`shlex.quote`).
+
+## 5. Interface graphique
 
 Deux panneaux : la liste des cas à gauche, le détail du cas
 sélectionné à droite (formulations, note, script). En bas, les mêmes
@@ -93,7 +129,7 @@ Aucune logique propre à la fenêtre : chaque bouton appelle exactement
 les mêmes fonctions que la ligne de commande (`src/shss/cases.py`), la
 fenêtre n'est qu'une autre façade.
 
-## 5. Comment c'est utilisé au moment de la résolution
+## 6. Comment c'est utilisé au moment de la résolution
 
 Branché dans `llm.generate_bash()`, juste après les commandes internes
 (`#@ model @#`, etc.) et avant tout appel au modèle de génération. Une
@@ -105,7 +141,7 @@ modèle de génération — visible dans `#@ history @#` avec le type
 Si la base est vide (le cas par défaut, rien de curaté au départ), rien
 n'est chargé : aucun coût ajouté pour une demande ordinaire.
 
-## 6. Limites connues
+## 7. Limites connues
 
 - Le modèle d'embeddings (`nomic-embed-text`, distinct du modèle de
   génération) est nécessaire : le modèle de génération seul ne sépare
@@ -121,3 +157,6 @@ n'est chargé : aucun coût ajouté pour une demande ordinaire.
 - La base (`~/.shss/cases.json`) est personnelle, pas partagée par
   défaut avec les autres utilisateurs de la machine ni livrée avec
   shss.
+- Un cas gabarit n'extrait que la **première** chaîne entre guillemets
+  d'une demande — une demande avec plusieurs contenus variables entre
+  guillemets ne capture que le premier, les autres sont ignorés.
