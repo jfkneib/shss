@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+#
+# pc-temp-info -- releve toutes les sondes de temperature disponibles
+# (hwmon, sans sudo requis) + GPU NVIDIA (nvidia-smi).
+#
+# N'invente aucune correspondance capant/composant physique quand le
+# noyau ne la donne pas : un canal hwmon sans "_label" s'affiche
+# "capteur N", pas devine (constate en pratique : dell_smm n'etiquette
+# aucun de ses 7 canaux, aucun moyen fiable de savoir lequel est le
+# GPU/le ventilateur/la carte mere sans documentation constructeur).
+
+set -u
+export LC_NUMERIC=C
+
+# milli-degres -> degres
+mc()
+{
+    awk -v v="$1" 'BEGIN { printf "%.1f", v / 1000 }'
+}
+
+# Au-dela de ce seuil (degres), une lecture hwmon est presque surement
+# une valeur sentinelle ("non defini"/capteur non peuple), pas une
+# vraie temperature -- aucun composant reel de ce genre de machine ne
+# depasse ca, meme en limite critique. Constate en pratique : un
+# max_temp NVMe secondaire a 65261°C, un capteur dell_smm a 126°C.
+PLAUSIBLE_MAX=150
+
+print_hwmon_chip()
+{
+    local hw="$1"
+    local name
+    name=$(cat "$hw/name" 2>/dev/null)
+    [[ -n "$name" ]] || return
+
+    local temps=("$hw"/temp*_input)
+    [[ -e "${temps[0]}" ]] || return
+
+    echo "$name"
+    echo "------------------------------------------------------------"
+
+    local t n label val line max_f crit_f extra max_v crit_v
+    for t in "${temps[@]}"; do
+        [[ -e "$t" ]] || continue
+        n=$(basename "$t")
+        n=${n#temp}
+        n=${n%_input}
+        label=$(cat "${t%_input}_label" 2>/dev/null)
+        [[ -n "$label" ]] || label="capteur $n"
+        val=$(mc "$(cat "$t")")
+
+        if awk -v v="$val" -v m="$PLAUSIBLE_MAX" 'BEGIN{exit !(v>m)}'; then
+            line=$(printf "  %-24s valeur suspecte (%s°C, capteur probablement non peuplé)" "$label" "$val")
+            echo "$line"
+            continue
+        fi
+
+        line=$(printf "  %-24s %s°C" "$label" "$val")
+
+        extra=""
+        max_f="${t%_input}_max"
+        crit_f="${t%_input}_crit"
+        if [[ -f "$max_f" ]]; then
+            max_v=$(mc "$(cat "$max_f")")
+            awk -v v="$max_v" -v m="$PLAUSIBLE_MAX" 'BEGIN{exit !(v<=m)}' && extra="${extra} max=${max_v}°C"
+        fi
+        if [[ -f "$crit_f" ]]; then
+            crit_v=$(mc "$(cat "$crit_f")")
+            awk -v v="$crit_v" -v m="$PLAUSIBLE_MAX" 'BEGIN{exit !(v<=m)}' && extra="${extra} crit=${crit_v}°C"
+        fi
+        [[ -n "$extra" ]] && line="$line (${extra# })"
+
+        echo "$line"
+    done
+    echo
+}
+
+print_gpu()
+{
+    command -v nvidia-smi >/dev/null 2>&1 || return
+
+    local out
+    out=$(nvidia-smi --query-gpu=name,temperature.gpu --format=csv,noheader 2>/dev/null)
+    [[ -n "$out" ]] || return
+
+    echo "GPU (NVIDIA)"
+    echo "------------------------------------------------------------"
+
+    local gname gtemp
+    while IFS=',' read -r gname gtemp; do
+        gname=$(xargs <<<"$gname")
+        gtemp=$(xargs <<<"$gtemp")
+        printf "  %-24s %s°C\n" "$gname" "$gtemp"
+    done <<<"$out"
+    echo
+}
+
+main()
+{
+    echo "############################################################"
+    echo "                    TEMPÉRATURES"
+    echo "Machine : $(hostname)"
+    echo "############################################################"
+    echo
+
+    local hw
+    for hw in /sys/class/hwmon/hwmon*; do
+        [[ -d "$hw" ]] || continue
+        print_hwmon_chip "$hw"
+    done
+
+    print_gpu
+}
+
+main "$@"
