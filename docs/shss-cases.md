@@ -137,7 +137,7 @@ pas), en bash (`"$SHSS_REQUEST"`) comme en python
 cas (par convention, sous `scripts/` dans ce répertoire) sans jamais
 coder de chemin en dur vers un clone git précis — ce répertoire, lui,
 est garanti présent partout où le profil a été installé (voir
-`examples/cases/pc-stats/` pour l'exemple concret : les scripts de
+`profiles/pc-stats/` pour l'exemple concret : les scripts de
 `linux/bin/` — sous `linux/` puisque ce sont des outils Linux, pas
 portables tels quels vers un autre OS — sont distribués avec la base
 de cas, et un cas s'y réfère via

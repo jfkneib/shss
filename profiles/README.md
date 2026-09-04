@@ -1,4 +1,4 @@
-# examples/cases/ — profils de cas curatés
+# profiles/ — profils de cas curatés
 
 Chaque sous-dossier ici est un **profil** de cas curatés pour shss
 (voir `docs/shss-cases.md` à la racine du dépôt pour le mécanisme
@@ -16,7 +16,7 @@ le paquet `.deb` (voir plus bas).
 ## Structure attendue pour un nouveau profil
 
 ```
-examples/cases/<nom>/
+profiles/<nom>/
   README.md          -- ce que fait le profil, comment l'installer, limites connues
   cases.seed.json     -- instantané de la base curatée (texte pur, versionné)
   <os>/                -- linux/, windows/, macos/... -- scripts par OS
@@ -73,7 +73,7 @@ construisant `pc-stats` — pas une liste théorique :
    chemin qui ne marchait que par hasard depuis la racine du dépôt
    (vérifié deux fois différentes dans `pc-stats`).
 7. Régénérer le seed :
-   `cp ~/.shss/profiles/<nom>/cases.json examples/cases/<nom>/cases.seed.json`.
+   `cp ~/.shss/profiles/<nom>/cases.json profiles/<nom>/cases.seed.json`.
 8. Documenter honnêtement ce qui est vérifié vs supposé — un script
    écrit sans le matériel ou le logiciel correspondant sous la main
    (ex : `pc-battery-info`, jamais testé sur un vrai portable) doit
@@ -86,7 +86,7 @@ construisant `pc-stats` — pas une liste théorique :
   toujours une étape manuelle (voir le README du profil, section
   « Récupérer la base opérationnelle »).
 - **Via le paquet `.deb`** : `packaging/build.sh` copie tout
-  `examples/cases/` automatiquement — aucune modification du script
+  `profiles/` automatiquement — aucune modification du script
   de packaging n'est nécessaire pour un nouveau profil. Seule
   l'installation côté utilisateur reste manuelle, même depuis le
   paquet.

@@ -171,7 +171,7 @@ def profile_dir(cases_path: Path = None) -> Path:
     convention) sans jamais coder un chemin en dur : contrairement a
     un chemin vers l'emplacement d'un clone git, ce repertoire est
     garanti present partout ou le profil a ete installe, quelle que
-    soit la machine (voir examples/cases/pc-stats/README.md pour le
+    soit la machine (voir profiles/pc-stats/README.md pour le
     cas concret qui a motive ceci -- deux cas y avaient ete ajoutes
     avec un chemin code en dur vers ce depot, cassant des que lance
     d'ailleurs)."""

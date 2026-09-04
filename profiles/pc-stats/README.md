@@ -28,18 +28,18 @@ mettre à jour) — **depuis un clone git** :
 
 ```bash
 mkdir -p ~/.shss/profiles/pc-stats/scripts
-cp examples/cases/pc-stats/cases.seed.json ~/.shss/profiles/pc-stats/cases.json
-cp -r examples/cases/pc-stats/linux ~/.shss/profiles/pc-stats/scripts/linux
+cp profiles/pc-stats/cases.seed.json ~/.shss/profiles/pc-stats/cases.json
+cp -r profiles/pc-stats/linux ~/.shss/profiles/pc-stats/scripts/linux
 ./bin/shss-cases --profile pc-stats reindex
 ```
 
 **Depuis le paquet `.deb`** (ce dossier est fourni sous
-`/opt/shss/examples/cases/pc-stats/`, mêmes commandes avec ce chemin) :
+`/opt/shss/profiles/pc-stats/`, mêmes commandes avec ce chemin) :
 
 ```bash
 mkdir -p ~/.shss/profiles/pc-stats/scripts
-cp /opt/shss/examples/cases/pc-stats/cases.seed.json ~/.shss/profiles/pc-stats/cases.json
-cp -r /opt/shss/examples/cases/pc-stats/linux ~/.shss/profiles/pc-stats/scripts/linux
+cp /opt/shss/profiles/pc-stats/cases.seed.json ~/.shss/profiles/pc-stats/cases.json
+cp -r /opt/shss/profiles/pc-stats/linux ~/.shss/profiles/pc-stats/scripts/linux
 shss-cases --profile pc-stats reindex
 ```
 
@@ -88,7 +88,7 @@ clone git précis. `uptime` illustre bien la logique : son cas extrait
 juste le mois demandé (`SHSS_REQUEST` ou stdin), puis appelle
 `$SHSS_PROFILE_DIR/scripts/linux/bin/pc-uptime` qui, lui, source
 `lib/pc-stats-common.sh` à côté de lui — d'où l'étape `cp -r
-examples/cases/pc-stats/linux` ci-dessus, qui embarque `bin/` et
+profiles/pc-stats/linux` ci-dessus, qui embarque `bin/` et
 `lib/` ensemble.
 
 Deux cas (`disques`, `uptime`) avaient d'abord été ajoutés avec un

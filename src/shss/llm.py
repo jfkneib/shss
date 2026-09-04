@@ -521,7 +521,7 @@ class MiniLLM:
             #                    chemin en dur vers un clone git precis :
             #                    ce repertoire, lui, est garanti present
             #                    partout ou le profil a ete installe. Voir
-            #                    examples/cases/pc-stats/README.md.
+            #                    profiles/pc-stats/README.md.
             env_vars = {
                 "SHSS_REQUEST": request,
                 "SHSS_PREFIX": prefix,

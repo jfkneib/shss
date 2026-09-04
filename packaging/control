@@ -21,5 +21,5 @@ Description: console bash augmentee par un petit LLM local
  shss-cases gere une base de cas curates (demande -> script ecrit a la
  main) retrouves par similarite d'embedding plutot que regeneres a
  chaque fois -- profils separes, cas "gabarit", GUI optionnelle. Un
- exemple complet fourni sous /opt/shss/examples/cases/pc-stats/ (12
+ profil complet fourni sous /opt/shss/profiles/pc-stats/ (12
  outils de supervision systeme) : voir son README pour l'activer.
