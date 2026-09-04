@@ -39,6 +39,17 @@ Pour forcer explicitement l'un ou l'autre :
 ./bin/shss-cases list   # (ou n'importe quelle autre sous-commande : toujours en CLI)
 ```
 
+**Pour transmettre une base à quelqu'un d'autre** (un collègue qui teste,
+une autre machine…) : ne copie que `cases.json` — c'est le seul
+fichier édité à la main. `cases.embeddings.json` (le cache
+d'embeddings, à côté) ne se copie jamais : c'est entièrement dérivé de
+`cases.json`, à régénérer localement (`shss-cases reindex`) après
+avoir mis `cases.json` en place et téléchargé le modèle d'embeddings
+(`shss-cases download-model`) si besoin. Un cache copié depuis une
+autre machine peut avoir été calculé avec un modèle légèrement
+différent (quantization différente, par exemple) — régénérer évite le
+problème plutôt que de le transmettre.
+
 ## 3. Ligne de commande
 
 `./bin/shss-cases --help` affiche un exemple complet ; en résumé :
