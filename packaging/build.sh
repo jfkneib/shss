@@ -26,11 +26,15 @@ cp "$REPO_ROOT/LISEZMOI.md" "$STAGE/opt/shss/LISEZMOI.md"
 cp "$REPO_ROOT/LICENSE" "$STAGE/opt/shss/LICENSE"
 mkdir -p "$STAGE/opt/shss/model"
 
-# examples/cases/pc-stats : fourni pour que l'installer soit possible
-# sans re-cloner le depot (voir son README, section "Recuperer la base
-# operationnelle") -- mais reste opt-in, comme depuis toujours : rien
-# ici ne le copie dans ~/.shss/profiles/ ni ne lance reindex tout
-# seul. shss reste un outil de console par defaut.
+# examples/cases/ : tous les profils (pc-stats et tout futur profil,
+# voir examples/cases/README.md) fournis pour que leur installation
+# soit possible sans re-cloner le depot -- mais reste opt-in, comme
+# depuis toujours : rien ici ne copie quoi que ce soit dans
+# ~/.shss/profiles/ ni ne lance reindex tout seul. shss reste un
+# outil de console par defaut. Copie generique : un nouveau profil
+# ajoute sous examples/cases/ est inclus automatiquement, sans
+# modifier ce script (seule la ligne chmod plus bas doit le voir,
+# et elle est deja generique aussi).
 mkdir -p "$STAGE/opt/shss/examples"
 cp -r "$REPO_ROOT/examples/cases" "$STAGE/opt/shss/examples/cases"
 
@@ -66,7 +70,10 @@ chmod 0755 \
     "$STAGE/usr/bin/shss" \
     "$STAGE/usr/bin/shss-cases" \
     "$STAGE/usr/bin/shss-resolve-inline"
-find "$STAGE/opt/shss/examples/cases/pc-stats/linux/bin" -type f -exec chmod 0755 {} +
+# Generique, pas juste pc-stats : n'importe quel profil sous
+# examples/cases/<nom>/<os>/bin/ (voir examples/cases/README.md) doit
+# rester executable, sans modifier ce script a chaque nouveau profil.
+find "$STAGE/opt/shss/examples/cases" -path "*/bin/*" -type f -exec chmod 0755 {} +
 
 OUT="$REPO_ROOT/shss_${VERSION}_all.deb"
 dpkg-deb --root-owner-group --build "$STAGE" "$OUT"
