@@ -17,3 +17,9 @@ Description: console bash augmentee par un petit LLM local
  shell-integration/shss.bash, des commandes utilitaires (models,
  model, history, help), et un selecteur de modele interactif (Ctrl-Y,
  necessite fzf).
+ .
+ shss-cases gere une base de cas curates (demande -> script ecrit a la
+ main) retrouves par similarite d'embedding plutot que regeneres a
+ chaque fois -- profils separes, cas "gabarit", GUI optionnelle. Un
+ exemple complet fourni sous /opt/shss/examples/cases/pc-stats/ (12
+ outils de supervision systeme) : voir son README pour l'activer.

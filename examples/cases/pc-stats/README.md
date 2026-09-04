@@ -10,24 +10,37 @@ chaque script ci-dessous est câblé comme un cas dans le profil
 `pc-stats` (voir `docs/shss-cases.md` à la racine du dépôt pour le
 mécanisme général — profils, cas gabarit, variables d'environnement).
 
-## Récupérer la base opérationnelle après un `git pull`
+## Récupérer la base opérationnelle
 
-**Important à savoir** : `git pull` seul ne suffit pas. Les scripts
-(`linux/bin/pc-*`, `linux/lib/`) sont versionnés, mais la base de cas
-qui les rend réellement utilisables (`~/.shss/profiles/pc-stats/`) vit
-**hors du dépôt**, dans ton `$HOME` — jamais écrasée par un pull, pour
-ne pas effacer des cas que tu aurais ajoutés toi-même.
+**Important à savoir** : avoir les fichiers de ce dossier (`git pull`,
+ou le paquet `.deb` — voir plus bas) ne suffit pas à lui seul. Les
+scripts (`linux/bin/pc-*`, `linux/lib/`) sont fournis, mais la base de
+cas qui les rend réellement utilisables (`~/.shss/profiles/pc-stats/`)
+vit **hors de ce dossier**, dans ton `$HOME` — jamais écrasée par un
+pull ou une mise à jour du paquet, pour ne pas effacer des cas que tu
+aurais ajoutés toi-même. Toujours une étape manuelle, volontairement
+(shss reste un outil de console — rien ne s'active tout seul).
 
 `cases.seed.json`, à côté de ce README, est un instantané de la base
 curatée (les demandes-exemples + de petits scripts d'appel, texte pur,
 rien de propre à une machine — voir plus bas). Pour l'installer (ou la
-mettre à jour après un pull) :
+mettre à jour) — **depuis un clone git** :
 
 ```bash
 mkdir -p ~/.shss/profiles/pc-stats/scripts
 cp examples/cases/pc-stats/cases.seed.json ~/.shss/profiles/pc-stats/cases.json
 cp -r examples/cases/pc-stats/linux ~/.shss/profiles/pc-stats/scripts/linux
 ./bin/shss-cases --profile pc-stats reindex
+```
+
+**Depuis le paquet `.deb`** (ce dossier est fourni sous
+`/opt/shss/examples/cases/pc-stats/`, mêmes commandes avec ce chemin) :
+
+```bash
+mkdir -p ~/.shss/profiles/pc-stats/scripts
+cp /opt/shss/examples/cases/pc-stats/cases.seed.json ~/.shss/profiles/pc-stats/cases.json
+cp -r /opt/shss/examples/cases/pc-stats/linux ~/.shss/profiles/pc-stats/scripts/linux
+shss-cases --profile pc-stats reindex
 ```
 
 Le `reindex` est indispensable et prend quelques secondes : c'est lui
@@ -60,9 +73,8 @@ modifier* chaque outil.
 vers un autre OS. Le jour où un `pc-power` Windows/macOS aurait un
 sens, il vivrait dans un `windows/`/`macos/` à côté, avec sa propre
 implémentation — sans rien bouger dans `linux/` ni dans la logique des
-cas eux-mêmes. `data/` (juste des lignes CSV, pas du code) reste au
-niveau du profil : le format de `power.csv` n'a pas de raison de
-dépendre de l'OS qui l'a produit.
+cas eux-mêmes. Les données produites par `pc-power-log` (`power.csv`),
+elles, ne vivent pas dans ce dépôt du tout : voir plus bas.
 
 **Architecture des cas** : chaque cas est un petit script d'appel
 (quelques lignes) qui exécute le vrai outil via
@@ -106,20 +118,24 @@ changement — aucun cas n'a besoin d'être réédité pour ça, contrairement
 
 Plus, autonomes (pas de cas dédié — support pour `energie`) :
 
-- **`linux/bin/pc-power-log`** — ajoute une ligne à `data/power.csv`.
-  Rien ne l'appelle automatiquement ; lance-le à la main, ou installe
-  le minuteur (voir plus bas) si tu veux un historique régulier.
+- **`linux/bin/pc-power-log`** — ajoute une ligne à
+  `${PC_STATS_DATA_DIR:-~/.pc-stats}/power.csv`. Rien ne l'appelle
+  automatiquement ; lance-le à la main, ou installe le minuteur (voir
+  plus bas) si tu veux un historique régulier. Le fichier vit sous
+  `$HOME`, jamais à côté du script lui-même : ce script peut être
+  installé n'importe où (y compris un `/opt/shss/...` en lecture
+  seule via le paquet .deb), `$HOME` reste inscriptible quel que soit
+  l'endroit d'où il tourne.
 - **`linux/lib/pc-stats-common.sh`** — logique partagée entre les
   outils.
 - **`linux/systemd/pc-power-log.{service,timer}`** — fichiers d'unité
   fournis en référence, **pas installés par défaut**. Testés une fois
   en mode utilisateur sur cette machine (4 septembre 2026), puis
   désinstallés délibérément — voir plus bas.
-- **`data/power.csv`** — jamais versionné (`.gitignore`).
 
 ## Pas encore fait
 
-Historique/tendances à partir de `data/power.csv` (rien ne l'exploite
+Historique/tendances à partir de `power.csv` (rien ne l'exploite
 encore, seul `pc-power-log` l'alimente) ; identité machine synthétique
 (déjà en partie couverte par l'en-tête de `pc-power` — hostname/
 kernel/CPU/RAM) ; USB/PCI, utilisateurs/sessions, sécurité/ports,
@@ -139,14 +155,17 @@ systemctl --user enable --now pc-power-log.timer
 **Compromis root/utilisateur**, à choisir en connaissance de cause :
 
 - **Utilisateur** (`systemctl --user`, ci-dessus) : aucun sudo pour
-  installer, `data/power.csv` reste possédé par toi. Le CPU (RAPL)
-  reste à 0 W dans le log (`cpu_mesure=0`) — `sudo` ne peut pas
+  installer, `~/.pc-stats/power.csv` reste possédé par toi. Le CPU
+  (RAPL) reste à 0 W dans le log (`cpu_mesure=0`) — `sudo` ne peut pas
   demander de mot de passe depuis un minuteur sans terminal. Le reste
   (GPU/RAM/disques/écrans) continue d'être mesuré/estimé normalement.
 - **Root** (service système, `/etc/systemd/system/`, `sudo systemctl
   enable --now`) : le CPU se mesure réellement (root a l'accès RAPL
-  direct), mais `data/power.csv` devient root:root (lecture libre,
-  édition/suppression nécessitent `sudo`).
+  direct), mais le fichier atterrit sous le `$HOME` de root
+  (`/root/.pc-stats/power.csv` typiquement) — root:root, lecture
+  libre, édition/suppression nécessitent `sudo`. Fixe
+  `PC_STATS_DATA_DIR` dans le fichier `.service` (`Environment=`) si
+  tu préfères un autre emplacement.
 
 Si le minuteur en mode utilisateur est installé et que tu veux qu'il
 continue même déconnecté (pas seulement pendant une session ouverte) :

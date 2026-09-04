@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #
-# pc-power-log -- ajoute une ligne de mesure a data/power.csv.
+# pc-power-log -- ajoute une ligne de mesure a $PC_STATS_DATA_DIR/power.csv
+# (par defaut ~/.pc-stats/power.csv).
 #
 # Autonome : rien n'appelle ce script automatiquement par defaut.
 # Lance-le a la main quand tu veux un point de mesure de plus, ou
@@ -13,11 +14,18 @@
 # a la main sans sudo, ou via un service systemd EN ROOT (voir le
 # README, section "compromis root/utilisateur"). En mode utilisateur,
 # GPU/RAM/disques/ecrans continuent d'etre mesures/estimes normalement.
+#
+# Pourquoi PAS un chemin relatif a ce script (comme avant) : ce
+# script peut se retrouver installe par le paquet .deb sous
+# /opt/shss/... -- root:root, pas inscriptible par un utilisateur
+# normal (constate en pratique en simulant ce cas : mkdir echoue,
+# rien ne s'ecrit). Sous $HOME par defaut, ecrivable par construction,
+# quel que soit l'endroit d'ou ce script est execute.
 
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DATA_DIR="$SCRIPT_DIR/../data"
+DATA_DIR="${PC_STATS_DATA_DIR:-$HOME/.pc-stats}"
 CSV_FILE="$DATA_DIR/power.csv"
 HEADER="timestamp,cpu_w,ram_w,gpu_w,disk_w,screen_w,usb_w,mobo_w,psu_loss_w,total_w,cpu_mesure"
 
