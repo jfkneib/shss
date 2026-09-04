@@ -44,7 +44,7 @@ Pour forcer explicitement l'un ou l'autre :
 `./bin/shss-cases --help` affiche un exemple complet ; en résumé :
 
 | Commande | Effet |
-|---|---|
+| --- | --- |
 | `add <id> --request "..." [--request "..."] [--note "..."]` | ajoute un cas (script sur stdin, ou `--script-file`) |
 | `edit <id> [--request "..."] [--note "..."] [--script-file f]` | modifie **seulement** les champs fournis, le reste ne bouge pas |
 | `remove <id>` | retire un cas |
@@ -109,12 +109,19 @@ printf '%s' 'select | id | name |   from itsmlocal.glpi_entities;' | SHSS_REQUES
 — pas juste le chemin du script : le `printf | script` fait partie du
 résultat, avec le contenu correctement échappé pour bash (`shlex.quote`).
 
-**`SHSS_REQUEST`** : la demande complète d'origine (pas juste le
-contenu entre guillemets) est toujours accessible via cette variable
-d'environnement, pour n'importe quel cas (gabarit ou pas). Utile quand
-un script a besoin de plus de contexte que le seul contenu extrait —
-en bash : `"$SHSS_REQUEST"` ; en python : `os.environ["SHSS_REQUEST"]`.
-Toujours une vraie variable d'environnement, jamais collée dans le
+**Variables toujours disponibles pour un cas qui matche** (gabarit ou
+pas), en bash (`"$SHSS_REQUEST"`) comme en python
+(`os.environ["SHSS_REQUEST"]`) ou n'importe quel autre langage :
+
+| Variable | Contenu |
+| --- | --- |
+| `SHSS_REQUEST` | la demande complète d'origine (pas juste le contenu entre guillemets) |
+| `SHSS_PREFIX` | le bash avant la balise `#@ ... @#` sur la même ligne |
+| `SHSS_SUFFIX` | le bash après la balise sur la même ligne |
+| `SHSS_MATCH_SCORE` | le score de similarité qui a fait matcher ce cas (ex : `0.8412`) |
+| `SHSS_CASE_ID` | l'identifiant du cas |
+
+Toujours de vraies variables d'environnement, jamais collées dans le
 code du script : contrairement à une substitution textuelle
 (`@@variable@@` remplacé directement dans le source), l'échappement
 correct dépend du langage et de l'endroit exact où le texte atterrit —
