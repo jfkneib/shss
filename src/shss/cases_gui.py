@@ -15,23 +15,43 @@ import queue
 import threading
 
 
+def _select_all(widget):
+    widget.tag_remove("sel", "1.0", "end")
+    widget.tag_add("sel", "1.0", "end-1c")
+    widget.mark_set("insert", "end-1c")
+    widget.see("insert")
+
+
 def _add_text_context_menu(tk, widget):
     """Menu clic-droit (Couper/Copier/Coller/Tout sélectionner) sur un
     tk.Text -- Ctrl-C/X/V marchent deja nativement des que le widget a
     le focus clavier, mais rien n'indique a l'oeil que c'est possible
     sur un tk.Text brut (pas de menu contextuel par defaut, contrairement
-    a un champ de texte natif de l'OS)."""
+    a un champ de texte natif de l'OS).
+
+    Rebranche aussi Ctrl-A sur "tout selectionner" : par defaut, un
+    tk.Text suit la convention Emacs (Ctrl-A = debut de ligne, pas
+    selection) -- source d'un vrai incident constate : coller un
+    script en pensant avoir tout selectionne au prealable l'insere en
+    plein milieu de l'ancien contenu, sans le remplacer, et corrompt
+    le script (deux "if" imbriques n'importe comment, syntaxe cassee)."""
     menu = tk.Menu(widget, tearoff=0)
     menu.add_command(label="Couper", command=lambda: widget.event_generate("<<Cut>>"))
     menu.add_command(label="Copier", command=lambda: widget.event_generate("<<Copy>>"))
     menu.add_command(label="Coller", command=lambda: widget.event_generate("<<Paste>>"))
     menu.add_separator()
-    menu.add_command(label="Tout sélectionner", command=lambda: widget.tag_add("sel", "1.0", "end"))
+    menu.add_command(label="Tout sélectionner (Ctrl-A)", command=lambda: _select_all(widget))
 
     def _popup(event):
         menu.tk_popup(event.x_root, event.y_root)
 
     widget.bind("<Button-3>", _popup)
+
+    def _on_ctrl_a(_event):
+        _select_all(widget)
+        return "break"  # empeche le "debut de ligne" Emacs par defaut
+
+    widget.bind("<Control-a>", _on_ctrl_a)
 
 
 def try_run():
