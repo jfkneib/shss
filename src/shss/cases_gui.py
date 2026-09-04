@@ -231,7 +231,8 @@ class _CaseDialog:
 
         win = tk.Toplevel(app.root)
         win.title("Modifier un cas" if existing else "Ajouter un cas")
-        win.geometry("520x520")
+        win.geometry("560x720")
+        win.minsize(480, 560)
         win.transient(app.root)
         self.win = win
 
@@ -276,6 +277,21 @@ class _CaseDialog:
         if existing and "threshold" in existing:
             self.threshold_entry.insert(0, str(existing["threshold"]))
 
+        # Boutons et message d'erreur ancres en bas AVANT la zone de
+        # script : avec pack(side="bottom"), ils restent toujours
+        # visibles et cliquables (donc "Valider" toujours atteignable),
+        # meme si la fenetre est redimensionnee petite -- c'est la zone
+        # de script (empaquetee en dernier, fill+expand) qui absorbe la
+        # difference, jamais les boutons qui se retrouvent hors ecran.
+        buttons = ttk.Frame(frame)
+        buttons.pack(side="bottom", fill="x", pady=(8, 0))
+        ttk.Button(buttons, text="Charger un fichier…", command=self._load_file).pack(side="left")
+        ttk.Button(buttons, text="Annuler", command=win.destroy).pack(side="right")
+        ttk.Button(buttons, text="Valider", command=self._submit).pack(side="right", padx=4)
+
+        self.error_label = ttk.Label(frame, foreground="#b33")
+        self.error_label.pack(side="bottom", anchor="w", pady=(4, 0))
+
         ttk.Label(frame, text="Script").pack(anchor="w", pady=(8, 0))
         self.script_text = tk.Text(frame, height=12, font=("Courier", 10))
         self.script_text.pack(fill="both", expand=True)
@@ -283,15 +299,6 @@ class _CaseDialog:
             self.script_text.insert("1.0", existing["script"])
         else:
             self.script_text.insert("1.0", "#!/usr/bin/env bash\n")
-
-        buttons = ttk.Frame(frame)
-        buttons.pack(fill="x", pady=(8, 0))
-        ttk.Button(buttons, text="Charger un fichier…", command=self._load_file).pack(side="left")
-        ttk.Button(buttons, text="Annuler", command=win.destroy).pack(side="right")
-        ttk.Button(buttons, text="Valider", command=self._submit).pack(side="right", padx=4)
-
-        self.error_label = ttk.Label(frame, foreground="#b33")
-        self.error_label.pack(anchor="w", pady=(4, 0))
 
     def _load_file(self):
         from tkinter import filedialog
