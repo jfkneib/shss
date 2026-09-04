@@ -11,6 +11,7 @@ llm.py) : seulement a l'interieur de try_run(), pour ne jamais faire
 echouer un simple `import shss.cases_gui` sur une machine sans Tk.
 """
 
+import os
 import queue
 import threading
 
@@ -88,7 +89,7 @@ class _App:
         self._queue = queue.Queue()
         self._busy = False
 
-        root.title("shss-cases — base de cas curatés")
+        self._update_title()
         root.geometry("820x520")
         root.minsize(600, 400)
 
@@ -99,6 +100,19 @@ class _App:
 
     def _build_layout(self):
         tk, ttk = self._tk, self._ttk
+
+        profile_row = ttk.Frame(self.root, padding=(10, 10, 10, 0))
+        profile_row.pack(fill="x")
+        ttk.Label(profile_row, text="Profil :").pack(side="left")
+        self.profile_var = tk.StringVar(value=os.environ.get("SHSS_CASES_PROFILE") or "(défaut)")
+        self.profile_combo = ttk.Combobox(profile_row, textvariable=self.profile_var, width=24)
+        self.profile_combo.pack(side="left", padx=(6, 0))
+        # editable (pas juste la liste) : taper un nom encore inexistant
+        # cree ce profil des le premier "Ajouter..." dedans -- pas besoin
+        # de le pre-creer ailleurs.
+        self.profile_combo.bind("<<ComboboxSelected>>", lambda _e: self._switch_profile())
+        self.profile_combo.bind("<Return>", lambda _e: self._switch_profile())
+        self._reload_profile_choices()
 
         body = ttk.Frame(self.root, padding=10)
         body.pack(fill="both", expand=True)
@@ -147,13 +161,42 @@ class _App:
         self.status.config(text=text)
 
     def _refresh_list(self):
-        self.cases = self._cases_module.load_cases()
+        try:
+            self.cases = self._cases_module.load_cases()
+        except ValueError as exc:
+            # Nom de profil invalide tape a la main (voir le combo en
+            # haut) -- message clair plutot qu'un plantage.
+            self.cases = []
+            self.listbox.delete(0, "end")
+            self._show_details(None)
+            self._set_status(f"Profil invalide : {exc}")
+            return
+
         self.listbox.delete(0, "end")
         for case in self.cases:
             self.listbox.insert("end", case["id"])
         self._show_details(None)
         n = len(self.cases)
         self._set_status(f"{n} cas curaté{'s' if n != 1 else ''}." if n else "Base vide.")
+
+    def _update_title(self):
+        profile = os.environ.get("SHSS_CASES_PROFILE")
+        suffix = f" — profil « {profile} »" if profile else " — base par défaut"
+        self.root.title(f"shss-cases{suffix}")
+
+    def _reload_profile_choices(self):
+        self.profile_combo["values"] = ["(défaut)"] + self._cases_module.list_profiles()
+
+    def _switch_profile(self):
+        choice = self.profile_var.get().strip()
+        if choice in ("", "(défaut)"):
+            os.environ.pop("SHSS_CASES_PROFILE", None)
+            choice = "(défaut)"
+        else:
+            os.environ["SHSS_CASES_PROFILE"] = choice
+        self._reload_profile_choices()
+        self._update_title()
+        self._refresh_list()
 
     def _selected_case(self):
         sel = self.listbox.curselection()

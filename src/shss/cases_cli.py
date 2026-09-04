@@ -11,6 +11,7 @@ ca marche dans les deux cas.
 """
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -246,6 +247,15 @@ def build_parser():
         epilog=_EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+    parser.add_argument(
+        "--profile",
+        metavar="NOM",
+        help=(
+            "travaille sur ce profil (~/.shss/profiles/NOM/) au lieu de la base "
+            "par defaut -- equivalent a export SHSS_CASES_PROFILE=NOM, mais pour "
+            "cette seule commande. Se place avant la sous-commande."
+        ),
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_list = sub.add_parser("list", help="liste les cas existants")
@@ -371,6 +381,12 @@ def main(argv=None):
 
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.profile:
+        # Comme un export fait juste avant : cases.py ne lit
+        # SHSS_CASES_PROFILE qu'au moment de resoudre les chemins,
+        # jamais mis en cache -- le modifier ici suffit pour toute la
+        # duree de cet appel, sans toucher au shell appelant.
+        os.environ["SHSS_CASES_PROFILE"] = args.profile
     return args.func(args) or 0
 
 

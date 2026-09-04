@@ -1,4 +1,5 @@
 import io
+import os
 import sys
 from pathlib import Path
 
@@ -134,6 +135,32 @@ def test_cmd_test_missing_embedding_model_gives_friendly_error(monkeypatch, tmp_
     err = capsys.readouterr().err
     assert "GGUF introuvable" in err
     assert "Traceback" not in err
+
+
+def test_main_profile_flag_sets_env_var_before_dispatch(monkeypatch, tmp_path):
+    monkeypatch.delenv("SHSS_CASES_PATH", raising=False)
+    monkeypatch.delenv("SHSS_CASES_PROFILE", raising=False)
+    monkeypatch.setattr(cases_module.Path, "home", staticmethod(lambda: tmp_path))
+
+    # main() ecrit dans os.environ directement (pas via monkeypatch,
+    # c'est le code teste qui le fait) -- nettoyage manuel pour ne pas
+    # laisser fuiter la variable vers les tests suivants.
+    try:
+        code = cli_module.main(["--profile", "pc-stats", "list"])
+        assert code == 0
+        assert os.environ["SHSS_CASES_PROFILE"] == "pc-stats"
+        assert cases_module._cases_path() == tmp_path / ".shss" / "profiles" / "pc-stats" / "cases.json"
+    finally:
+        os.environ.pop("SHSS_CASES_PROFILE", None)
+
+
+def test_main_without_profile_flag_leaves_env_var_untouched(monkeypatch, tmp_path):
+    _setup_paths(monkeypatch, tmp_path)
+    monkeypatch.delenv("SHSS_CASES_PROFILE", raising=False)
+
+    cli_module.main(["list"])
+
+    assert "SHSS_CASES_PROFILE" not in os.environ
 
 
 def test_cmd_gui_returns_0_when_it_opens(monkeypatch):

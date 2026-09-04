@@ -163,6 +163,17 @@ def _cases_path() -> Path:
     return Path.home() / ".shss" / "cases.json"
 
 
+def list_profiles():
+    """Liste triee des profils connus (sous-dossiers de
+    ~/.shss/profiles/ contenant un cases.json) -- le profil par defaut
+    (base racine, sans SHSS_CASES_PROFILE) n'y figure pas, c'est
+    toujours une option implicite en plus de cette liste."""
+    base = Path.home() / ".shss" / "profiles"
+    if not base.is_dir():
+        return []
+    return sorted(p.name for p in base.iterdir() if p.is_dir() and (p / "cases.json").is_file())
+
+
 def _cache_path(cases_path: Path = None) -> Path:
     override = os.environ.get("SHSS_CASES_CACHE_PATH")
     if override:

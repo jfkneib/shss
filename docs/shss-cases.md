@@ -186,6 +186,20 @@ variable à changer, le cache d'embeddings suit automatiquement au même
 endroit (pas besoin de synchroniser `SHSS_CASES_CACHE_PATH` à la main).
 `SHSS_CASES_PATH`, s'il est défini, reste prioritaire sur le profil.
 
+**Sans exporter la variable** : `--profile <nom>` sur n'importe quelle
+sous-commande (doit se placer avant elle), pour une seule commande —
+
+```bash
+./bin/shss-cases --profile pc-stats list
+./bin/shss-cases --profile pc-stats add disques --request "..."
+```
+
+**Dans l'interface graphique** : un champ « Profil » en haut de la
+fenêtre principale (liste déroulante des profils déjà utilisés, ou
+tape un nom encore inexistant pour en créer un dès le premier
+« Ajouter… » dedans). Le titre de la fenêtre rappelle le profil actif,
+pour ne jamais se tromper de base en cours d'usage.
+
 Au-delà de l'organisation, séparer les bases **réduit le risque de faux
 positif** entre cas sans rapport : moins une base mélange de domaines
 différents, moins une formulation généraliste risque d'intercepter par

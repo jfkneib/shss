@@ -33,6 +33,23 @@ def _setup_paths(monkeypatch, tmp_path):
     monkeypatch.setenv("SHSS_CASES_CACHE_PATH", str(tmp_path / "cases.embeddings.json"))
 
 
+def test_list_profiles_empty_when_no_profiles_dir(monkeypatch, tmp_path):
+    monkeypatch.setattr(cases_module.Path, "home", staticmethod(lambda: tmp_path))
+    assert cases_module.list_profiles() == []
+
+
+def test_list_profiles_lists_only_dirs_with_cases_json(monkeypatch, tmp_path):
+    monkeypatch.setattr(cases_module.Path, "home", staticmethod(lambda: tmp_path))
+    profiles_dir = tmp_path / ".shss" / "profiles"
+    (profiles_dir / "pc-stats").mkdir(parents=True)
+    (profiles_dir / "pc-stats" / "cases.json").write_text("[]")
+    (profiles_dir / "dev").mkdir(parents=True)
+    (profiles_dir / "dev" / "cases.json").write_text("[]")
+    (profiles_dir / "vide").mkdir(parents=True)  # pas de cases.json -- ignore
+
+    assert cases_module.list_profiles() == ["dev", "pc-stats"]
+
+
 def test_cases_profile_derives_both_paths(monkeypatch, tmp_path):
     monkeypatch.delenv("SHSS_CASES_PATH", raising=False)
     monkeypatch.delenv("SHSS_CASES_CACHE_PATH", raising=False)
