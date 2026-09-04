@@ -324,6 +324,7 @@ class _CaseDialog:
         buttons = ttk.Frame(frame)
         buttons.pack(side="bottom", fill="x", pady=(8, 0))
         ttk.Button(buttons, text="Charger un fichier…", command=self._load_file).pack(side="left")
+        ttk.Button(buttons, text="Aide", command=lambda: _HelpDialog(self.app, self.win)).pack(side="left", padx=4)
         ttk.Button(buttons, text="Annuler", command=win.destroy).pack(side="right")
         ttk.Button(buttons, text="Valider", command=self._submit).pack(side="right", padx=4)
 
@@ -507,3 +508,92 @@ class _ModelDialog:
             self.status.config(text=f"Installé : {path}")
 
         self.app._run_background("Téléchargement du modèle d'embeddings…", work, done)
+
+
+_HELP_TEXT = """CHAMPS DU FORMULAIRE
+
+Identifiant
+  Court, stable, ne se modifie pas une fois le cas créé (« Supprimer »
+  puis « Ajouter » pour en changer).
+
+Formulations d'exemple
+  Une par ligne. Plusieurs variantes de la même demande aident le
+  matching à mieux reconnaître le cas — plus il y en a, mieux c'est.
+
+Note
+  Libre, pour toi (et pour qui relira ce cas plus tard) : pourquoi ce
+  cas existe, ses limites connues. N'influence jamais le matching.
+
+Cas « gabarit »
+  À cocher quand le contenu entre guillemets de la demande change à
+  chaque fois (ex : corrige ma ligne : "...") plutôt qu'une question
+  toujours identique. Ce contenu est retiré du calcul de similarité
+  (le matching se base sur la formulation autour) et transmis au
+  script sur son entrée standard au moment de l'exécution — jamais
+  collé dans le code, aucun risque d'injection.
+
+Seuil de confiance
+  Vide = seuil global de la base (SHSS_CASES_THRESHOLD, 70 % par
+  défaut). Un chiffre entre 0 et 1 fixe un seuil propre à CE cas.
+  Un cas gabarit a souvent besoin d'un seuil plus élevé : une fois le
+  contenu entre guillemets normalisé, il ne reste que la formulation
+  pour distinguer les cas, et certaines formulations très génériques
+  ("corrige ma commande ... : \"...\"") matchent large. Utilise
+  « Tester une demande… » pour vérifier avant de choisir.
+
+Script
+  Le programme exécuté quand ce cas est réutilisé — bash, python,
+  n'importe quel langage avec un shebang valide. Jamais d'arguments en
+  ligne de commande (pas de sys.argv/$1) : ce dont il a besoin lui
+  arrive via les variables d'environnement ci-dessous, ou via son
+  entrée standard pour un cas gabarit.
+
+
+VARIABLES TOUJOURS DISPONIBLES POUR UN SCRIPT (gabarit ou pas)
+
+  SHSS_REQUEST       la demande complète d'origine
+  SHSS_PREFIX        le bash avant la balise #@ ... @# sur la ligne
+  SHSS_SUFFIX        le bash après la balise sur la ligne
+  SHSS_MATCH_SCORE   le score de similarité qui a fait matcher ce cas
+  SHSS_CASE_ID       l'identifiant de ce cas
+
+  bash   : "$SHSS_REQUEST"
+  python : os.environ["SHSS_REQUEST"]
+
+
+RAPPELER LE LLM DEPUIS UN SCRIPT
+
+Un script peut lui-même demander une génération au LLM pour une
+sous-partie qu'il ne sait pas traiter :
+
+  bin/shss-resolve-inline "#@ ta demande @#" 60 | head -1
+
+La première ligne de sortie est le texte généré, rien n'est exécuté.
+Utile pour combiner logique déterministe et génération — à utiliser
+avec parcimonie, ça recharge un modèle à chaque appel (quelques
+secondes).
+"""
+
+
+class _HelpDialog:
+    def __init__(self, app: _App, parent_win):
+        tk, ttk = app._tk, app._ttk
+
+        win = tk.Toplevel(parent_win)
+        win.title("Aide — shss-cases")
+        win.geometry("560x600")
+        win.transient(parent_win)
+        win.lift()
+        win.focus_force()
+        win.grab_set()
+
+        frame = ttk.Frame(win, padding=10)
+        frame.pack(fill="both", expand=True)
+
+        text = tk.Text(frame, wrap="word", state="normal")
+        text.pack(fill="both", expand=True)
+        text.insert("1.0", _HELP_TEXT)
+        text.config(state="disabled")
+        _add_text_context_menu(tk, text)  # copier reste possible, meme en lecture seule
+
+        ttk.Button(frame, text="Fermer", command=win.destroy).pack(anchor="e", pady=(8, 0))
