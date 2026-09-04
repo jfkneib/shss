@@ -452,11 +452,26 @@ class MiniLLM:
 
         match = best_match(request)
         if match is not None:
-            case, _score = match
-            text = case["script"]
-            if confirm is not None and not confirm(text):
+            case, _score, payload = match
+            stdin_mode = case.get("input") == "stdin" and payload is not None
+
+            review_text = case["script"]
+            if stdin_mode:
+                review_text = f"# entrée (stdin) : {payload!r}\n{review_text}"
+            if confirm is not None and not confirm(review_text):
                 raise ResolutionCancelled()
-            result = _write_script(text)
+
+            script_path = _write_script(case["script"])
+            if stdin_mode:
+                import shlex
+
+                # Le contenu variable ne touche jamais le code du script
+                # (pas d'injection possible) : il passe par stdin, comme
+                # n'importe quel pipe bash normal.
+                result = f"printf '%s' {shlex.quote(payload)} | {script_path}"
+            else:
+                result = script_path
+
             log_event(request, prefix, suffix, result, "case")
             return result
 

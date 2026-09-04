@@ -124,6 +124,8 @@ class _App:
             lines += [f"  • {r}" for r in case["requests"]]
             if case.get("note"):
                 lines += ["", f"note : {case['note']}"]
+            if case.get("input") == "stdin":
+                lines += ["", "gabarit : oui -- le contenu entre guillemets est transmis au script sur stdin"]
             lines += ["", "script :", "-" * 40, case["script"]]
             self.details.insert("1.0", "\n".join(lines))
         self.details.config(state="disabled")
@@ -253,6 +255,15 @@ class _CaseDialog:
         if existing and existing.get("note"):
             self.note_entry.insert(0, existing["note"])
 
+        self.stdin_var = tk.BooleanVar(value=bool(existing and existing.get("input") == "stdin"))
+        ttk.Checkbutton(
+            frame,
+            text='Cas « gabarit » : le contenu entre guillemets de la demande varie à chaque '
+            "fois et est transmis au script sur son entrée standard (ex: sys.stdin.read())",
+            variable=self.stdin_var,
+            wraplength=460,
+        ).pack(anchor="w", pady=(8, 0), fill="x")
+
         ttk.Label(frame, text="Script").pack(anchor="w", pady=(8, 0))
         self.script_text = tk.Text(frame, height=12, font=("Courier", 10))
         self.script_text.pack(fill="both", expand=True)
@@ -287,14 +298,19 @@ class _CaseDialog:
         requests = [r for r in self.requests_text.get("1.0", "end").splitlines() if r.strip()]
         script = self.script_text.get("1.0", "end")
         note = self.note_entry.get().strip()
+        input_mode = "stdin" if self.stdin_var.get() else ""
 
         try:
             if self.existing:
-                cases = cm.update_case(cm.load_cases(), case_id, requests=requests, script=script, note=note)
+                cases = cm.update_case(
+                    cm.load_cases(), case_id, requests=requests, script=script, note=note, input_mode=input_mode
+                )
             else:
                 if not case_id:
                     raise ValueError("un identifiant est requis")
-                cases = cm.add_case(cm.load_cases(), case_id, requests, script, note=note)
+                cases = cm.add_case(
+                    cm.load_cases(), case_id, requests, script, note=note, input_mode=input_mode or None
+                )
         except (ValueError, KeyError) as exc:
             self.error_label.config(text=str(exc))
             return
@@ -341,6 +357,10 @@ class _TestDialog:
         lines = []
         if cm.is_stale(cases, cache):
             lines.append("(cache pas à jour -- Réindexer d'abord pour un résultat fiable)\n")
+
+        payload, _normalized = cm.extract_payload(query)
+        if payload is not None:
+            lines.append(f"contenu entre guillemets détecté : {payload!r}\n")
 
         matches = cm.find_matches(query, cases=cases, cache=cache, top_k=5)
         if not matches:

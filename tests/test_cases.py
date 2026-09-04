@@ -204,6 +204,86 @@ def test_find_matches_empty_before_any_reindex(monkeypatch, tmp_path):
     assert cases_module.find_matches("n'importe quoi", cases=cases, cache=None) == []
 
 
+def test_extract_payload_finds_first_quoted_span():
+    payload, normalized = cases_module.extract_payload('corrige moi ma ligne bash : "select | id"')
+    assert payload == "select | id"
+    assert normalized == 'corrige moi ma ligne bash : "..."'
+
+
+def test_extract_payload_handles_single_quotes():
+    payload, normalized = cases_module.extract_payload("corrige : 'select | id'")
+    assert payload == "select | id"
+    assert normalized == 'corrige : "..."'
+
+
+def test_extract_payload_none_when_no_quotes():
+    payload, normalized = cases_module.extract_payload("energie consommee par le pc")
+    assert payload is None
+    assert normalized == "energie consommee par le pc"
+
+
+def test_add_case_with_input_mode_stdin_sets_input_field():
+    cases = cases_module.add_case([], "fix", ["x"], "echo x", input_mode="stdin")
+    assert cases[0]["input"] == "stdin"
+
+
+def test_add_case_rejects_invalid_input_mode():
+    try:
+        cases_module.add_case([], "fix", ["x"], "echo x", input_mode="bogus")
+        assert False, "devrait lever ValueError"
+    except ValueError:
+        pass
+
+
+def test_update_case_can_set_and_clear_input_mode():
+    cases = [{"id": "fix", "requests": ["x"], "script": "echo x"}]
+    updated = cases_module.update_case(cases, "fix", input_mode="stdin")
+    assert updated[0]["input"] == "stdin"
+
+    cleared = cases_module.update_case(updated, "fix", input_mode="")
+    assert "input" not in cleared[0]
+
+
+def test_template_case_matches_regardless_of_quoted_content(monkeypatch, tmp_path):
+    _setup_paths(monkeypatch, tmp_path)
+
+    class TemplateFakeEmbedder:
+        """Un seul 'sujet' reconnu : peu importe le texte tant qu'il se
+        normalise pareil (voir extract_payload) -- demontre que deux
+        contenus entre guillemets differents matchent quand meme le
+        meme cas, et que le VRAI contenu de la demande (pas celui de
+        l'exemple stocke) est retourne comme payload."""
+
+        def __init__(self):
+            self.model_path = "fake.gguf"
+
+        def embed(self, text):
+            return [1.0, 0.0] if text == 'corrige moi ma ligne bash : "..."' else [0.0, 1.0]
+
+    cases = [
+        {
+            "id": "fix-select",
+            "requests": ['corrige moi ma ligne bash : "select | id from t"'],
+            "script": "x",
+            "input": "stdin",
+        }
+    ]
+    embedder = TemplateFakeEmbedder()
+    cache = cases_module.reindex(cases, embedder=embedder)
+
+    match = cases_module.best_match(
+        'corrige moi ma ligne bash : "select | truc | machin from autre_table"',
+        cases=cases,
+        cache=cache,
+        embedder=embedder,
+    )
+
+    assert match is not None
+    case, score, payload = match
+    assert case["id"] == "fix-select"
+    assert payload == "select | truc | machin from autre_table"
+
+
 def test_curated_embed_model_path_prefers_system_dir(monkeypatch, tmp_path):
     _isolate_embed_model_dirs(monkeypatch, tmp_path)
     system_dir = tmp_path / "system"
@@ -316,8 +396,9 @@ def test_best_match_returns_case_above_threshold(monkeypatch, tmp_path):
         "energie consommee par le pc", cases=cases, cache=cache, embedder=embedder
     )
     assert match is not None
-    case, score = match
+    case, score, payload = match
     assert case["id"] == "energie"
+    assert payload is None  # aucun contenu entre guillemets dans cette demande
 
 
 def test_best_match_returns_none_below_threshold(monkeypatch, tmp_path):

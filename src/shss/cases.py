@@ -19,12 +19,20 @@ reutilise le script curate tel quel, sans jamais charger le modele de
 generation. Si la base est vide (cas le plus courant, rien de curate
 pour l'instant), best_match() ne charge meme pas le modele
 d'embeddings -- aucun cout ajoute pour une demande ordinaire.
+
+Cas "gabarit" (input="stdin") : le texte entre guillemets dans la
+demande varie a chaque fois (ex: "corrige moi ma ligne bash : '...'")
+-- extract_payload() l'isole avant le calcul de similarite (matching
+sur la formulation autour, pas sur le contenu variable) et le
+transmet au script sur son entree standard au moment de l'execution,
+jamais colle dans le code du script -- aucun risque d'injection.
 """
 
 import hashlib
 import json
 import math
 import os
+import re
 import time
 import urllib.request
 from pathlib import Path
@@ -167,17 +175,27 @@ def _find_case(cases, case_id):
     return None
 
 
-def add_case(cases, case_id, requests, script, note=""):
+def add_case(cases, case_id, requests, script, note="", input_mode=None):
     """Retourne une nouvelle liste avec `case_id` ajoute. Leve
     ValueError si l'id existe deja -- on modifie/retire explicitement
-    un cas curate, on ne l'ecrase jamais silencieusement."""
+    un cas curate, on ne l'ecrase jamais silencieusement.
+
+    `input_mode="stdin"` (stocke dans le cas sous la cle "input") : le
+    contenu entre guillemets de la demande (voir extract_payload()) est
+    transmis au script sur son entree standard au lieu d'etre ignore --
+    un cas "gabarit", pour une demande dont le contenu varie a chaque
+    fois autour d'une formulation stable."""
     if _find_case(cases, case_id) is not None:
         raise ValueError(f"un cas « {case_id} » existe deja")
     if not requests:
         raise ValueError("il faut au moins une formulation d'exemple (--request)")
+    if input_mode not in (None, "stdin"):
+        raise ValueError(f"input invalide : {input_mode!r} (seul 'stdin' est reconnu)")
     case = {"id": case_id, "requests": list(requests), "script": script}
     if note:
         case["note"] = note
+    if input_mode:
+        case["input"] = input_mode
     return cases + [case]
 
 
@@ -189,14 +207,20 @@ def remove_case(cases, case_id):
     return [c for c in cases if c["id"] != case_id]
 
 
-def update_case(cases, case_id, requests=None, script=None, note=None):
+def update_case(cases, case_id, requests=None, script=None, note=None, input_mode=None):
     """Retourne une nouvelle liste avec `case_id` mis a jour en place
     (position preservee dans la liste) -- seuls les champs fournis
     (non None) sont remplaces, les autres restent tels quels. Leve
     KeyError si `case_id` n'existe pas (utiliser add_case() pour en
-    creer un nouveau)."""
+    creer un nouveau).
+
+    `input_mode` : passer "stdin" ou "" (chaine vide, pour repasser un
+    cas gabarit en cas normal -- None laisse le champ "input" tel quel,
+    comme les autres champs)."""
     if _find_case(cases, case_id) is None:
         raise KeyError(case_id)
+    if input_mode not in (None, "", "stdin"):
+        raise ValueError(f"input invalide : {input_mode!r} (seul 'stdin' est reconnu)")
 
     def _updated(case):
         if case["id"] != case_id:
@@ -208,6 +232,11 @@ def update_case(cases, case_id, requests=None, script=None, note=None):
             new_case["script"] = script
         if note is not None:
             new_case["note"] = note
+        if input_mode is not None:
+            if input_mode:
+                new_case["input"] = input_mode
+            else:
+                new_case.pop("input", None)
         return new_case
 
     return [_updated(c) for c in cases]
@@ -215,6 +244,29 @@ def update_case(cases, case_id, requests=None, script=None, note=None):
 
 def _request_hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+# Premiere chaine entre guillemets (simples ou doubles) dans une
+# demande -- volontairement la premiere seulement : une demande n'a
+# normalement qu'un seul contenu variable ("corrige moi ma ligne : '...'"),
+# et prendre la premiere reste previsible si jamais il y en a plusieurs.
+_QUOTED_RE = re.compile(r'"([^"]*)"|\'([^\']*)\'')
+
+
+def extract_payload(text: str):
+    """Retourne (payload, texte_normalise). `payload` est le contenu de
+    la premiere chaine entre guillemets dans `text`, ou None s'il n'y
+    en a pas. `texte_normalise` est `text` avec cette chaine remplacee
+    par un marqueur fixe ('"..."') -- deux demandes qui ne different
+    que par leur contenu entre guillemets ont ainsi le meme texte
+    normalise, donc la meme similarite avec un cas curate, quel que
+    soit ce contenu."""
+    m = _QUOTED_RE.search(text)
+    if not m:
+        return None, text
+    payload = m.group(1) if m.group(1) is not None else m.group(2)
+    normalized = text[: m.start()] + '"..."' + text[m.end() :]
+    return payload, normalized
 
 
 class Embedder:
@@ -291,7 +343,12 @@ def reindex(cases, embedder=None, cache_path=None, force=False):
             h = _request_hash(request)
             vector = old_entries.get((case["id"], h))
             if vector is None:
-                vector = embedder.embed(request)
+                # Normalise avant d'embedder (voir extract_payload) : un
+                # exemple colle avec son contenu reel entre guillemets
+                # matche quand meme une demande future au contenu
+                # different mais a la meme formulation autour.
+                _payload, normalized = extract_payload(request)
+                vector = embedder.embed(normalized)
             entries.append(
                 {
                     "case_id": case["id"],
@@ -346,7 +403,8 @@ def find_matches(query, cases=None, cache=None, embedder=None, top_k=3):
         return []
 
     embedder = embedder or Embedder()
-    query_vector = embedder.embed(query)
+    _payload, normalized_query = extract_payload(query)
+    query_vector = embedder.embed(normalized_query)
 
     by_case = {c["id"]: c for c in cases}
     best = {}
@@ -386,8 +444,11 @@ def _threshold():
 
 
 def best_match(query, cases=None, cache=None, embedder=None, threshold=None):
-    """Retourne (cas, score) si le meilleur candidat depasse le seuil de
-    confiance, sinon None.
+    """Retourne (cas, score, payload) si le meilleur candidat depasse le
+    seuil de confiance, sinon None. `payload` est le contenu entre
+    guillemets de `query` s'il y en a un (voir extract_payload()),
+    sinon None -- pertinent seulement pour un cas "gabarit"
+    (case["input"] == "stdin"), ignore sinon.
 
     Ne charge aucun modele si la base est vide : find_matches() sort
     avant d'instancier un Embedder des que `cases` ou `cache` est vide
@@ -399,5 +460,6 @@ def best_match(query, cases=None, cache=None, embedder=None, threshold=None):
     case, score, _matched_request = matches[0]
     seuil = threshold if threshold is not None else _threshold()
     if score >= seuil:
-        return case, score
+        payload, _normalized = extract_payload(query)
+        return case, score, payload
     return None

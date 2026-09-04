@@ -31,6 +31,13 @@ exemple complet, du premier cas a son utilisation :
   shss-cases edit energie --note "nouvelle note"     # sans retoucher le script
   shss-cases remove energie
 
+cas "gabarit" (--stdin) : le contenu entre guillemets de la demande
+varie a chaque fois, le script le lit sur stdin au lieu de l'ignorer :
+
+  shss-cases add fix-select --stdin \\
+      --request 'corrige moi ma ligne bash : "select | id from t"'
+  (le script lit son entree standard, ex: sys.stdin.read() en python)
+
 lance sans argument (juste `shss-cases`), une fenetre s'ouvre si
 possible -- sinon ce texte s'affiche.
 """
@@ -61,7 +68,12 @@ def _cmd_add(args):
 
     try:
         cases = cases_module.add_case(
-            cases, args.id, args.request, script, note=args.note or ""
+            cases,
+            args.id,
+            args.request,
+            script,
+            note=args.note or "",
+            input_mode="stdin" if args.stdin else None,
         )
     except ValueError as exc:
         print(f"shss-cases: {exc}", file=sys.stderr)
@@ -82,9 +94,15 @@ def _cmd_edit(args):
         print("(script sur stdin, Ctrl-D pour terminer)", file=sys.stderr)
         script = sys.stdin.read()
 
+    input_mode = None
+    if args.stdin:
+        input_mode = "stdin"
+    elif args.no_stdin:
+        input_mode = ""
+
     try:
         cases = cases_module.update_case(
-            cases, args.id, requests=args.request, script=script, note=args.note
+            cases, args.id, requests=args.request, script=script, note=args.note, input_mode=input_mode
         )
     except KeyError:
         print(f"shss-cases: aucun cas « {args.id} » (utilise 'add' pour en creer un)", file=sys.stderr)
@@ -124,6 +142,10 @@ def _cmd_test(args):
             "(lance 'shss-cases reindex')",
             file=sys.stderr,
         )
+
+    payload, _normalized = cases_module.extract_payload(args.query)
+    if payload is not None:
+        print(f"contenu entre guillemets detecte : {payload!r}", file=sys.stderr)
 
     matches = cases_module.find_matches(args.query, cases=cases, cache=cache, top_k=args.top)
     if not matches:
@@ -201,6 +223,15 @@ def build_parser():
     )
     p_add.add_argument("--script-file", metavar="FICHIER", help="lit le script depuis ce fichier (sinon : stdin)")
     p_add.add_argument("--note", help="pourquoi ce cas existe -- utile en le relisant plus tard (optionnel)")
+    p_add.add_argument(
+        "--stdin",
+        action="store_true",
+        help=(
+            "cas 'gabarit' : le contenu entre guillemets de la demande varie a "
+            "chaque fois (ex: 'corrige ma ligne : \"...\"') et est transmis au "
+            "script sur son entree standard, jamais colle dans le code"
+        ),
+    )
     p_add.set_defaults(func=_cmd_add)
 
     p_edit = sub.add_parser(
@@ -222,6 +253,8 @@ def build_parser():
     p_edit.add_argument("--script-file", metavar="FICHIER", help="remplace le script depuis ce fichier")
     p_edit.add_argument("--script-stdin", action="store_true", help="remplace le script depuis stdin (Ctrl-D)")
     p_edit.add_argument("--note", help="remplace la note")
+    p_edit.add_argument("--stdin", action="store_true", help="fait de ce cas un gabarit (voir 'add --stdin')")
+    p_edit.add_argument("--no-stdin", action="store_true", help="repasse ce cas en cas normal (retire 'input')")
     p_edit.set_defaults(func=_cmd_edit)
 
     p_remove = sub.add_parser("remove", help="retire un cas")
