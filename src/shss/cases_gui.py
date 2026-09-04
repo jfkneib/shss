@@ -598,6 +598,16 @@ La première ligne de sortie est le texte généré, rien n'est exécuté.
 Utile pour combiner logique déterministe et génération — à utiliser
 avec parcimonie, ça recharge un modèle à chaque appel (quelques
 secondes).
+
+
+PLUSIEURS BASES SÉPARÉES (SYSTÈME, DEV, AUTRE…)
+
+  export SHSS_CASES_PROFILE=dev
+
+Fait pointer shss-cases (et la résolution) vers
+~/.shss/profiles/dev/ — une seule variable, le cache d'embeddings
+suit automatiquement. Séparer les bases réduit aussi le risque de faux
+positif entre cas sans rapport.
 """
 
 

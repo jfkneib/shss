@@ -136,10 +136,30 @@ def discover_embedding_model_path(model=EMBED_MODEL_NAME, tag=EMBED_MODEL_TAG):
     ) from None
 
 
+_PROFILE_NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
 def _cases_path() -> Path:
     override = os.environ.get("SHSS_CASES_PATH")
     if override:
         return Path(override)
+
+    # SHSS_CASES_PROFILE : plusieurs bases separees (ex: "systeme",
+    # "dev") plutot qu'une seule -- reduit le risque de faux positif
+    # entre cas sans rapport (constate en pratique avec fix-select) et
+    # permet de charger un profil different selon le contexte de
+    # travail, sans avoir a synchroniser deux variables a la main
+    # (SHSS_CASES_CACHE_PATH se deduit automatiquement de celle-ci,
+    # voir _cache_path()).
+    profile = os.environ.get("SHSS_CASES_PROFILE")
+    if profile:
+        if not _PROFILE_NAME_RE.match(profile):
+            raise ValueError(
+                f"SHSS_CASES_PROFILE invalide : {profile!r} "
+                "(lettres, chiffres, - et _ seulement)"
+            )
+        return Path.home() / ".shss" / "profiles" / profile / "cases.json"
+
     return Path.home() / ".shss" / "cases.json"
 
 

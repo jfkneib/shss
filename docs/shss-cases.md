@@ -160,7 +160,30 @@ modèle de génération — visible dans `#@ history @#` avec le type
 Si la base est vide (le cas par défaut, rien de curaté au départ), rien
 n'est chargé : aucun coût ajouté pour une demande ordinaire.
 
-## 7. Limites connues
+## 7. Plusieurs bases (profils)
+
+Par défaut, une seule base (`~/.shss/cases.json`). Pour en séparer
+plusieurs — système, dev, autre — sans les mélanger :
+
+```bash
+export SHSS_CASES_PROFILE=dev
+./bin/shss-cases add ...   # va dans ~/.shss/profiles/dev/cases.json
+```
+
+`SHSS_CASES_PROFILE=<nom>` fait pointer `shss-cases` (et la résolution
+elle-même) vers `~/.shss/profiles/<nom>/cases.json` — une seule
+variable à changer, le cache d'embeddings suit automatiquement au même
+endroit (pas besoin de synchroniser `SHSS_CASES_CACHE_PATH` à la main).
+`SHSS_CASES_PATH`, s'il est défini, reste prioritaire sur le profil.
+
+Au-delà de l'organisation, séparer les bases **réduit le risque de faux
+positif** entre cas sans rapport : moins une base mélange de domaines
+différents, moins une formulation généraliste risque d'intercepter par
+erreur une demande d'un autre domaine (constaté en pratique avec un
+cas SQL qui matchait à tort une demande sur une commande bash
+quelconque — voir section 4).
+
+## 8. Limites connues
 
 - Le modèle d'embeddings (`nomic-embed-text`, distinct du modèle de
   génération) est nécessaire : le modèle de génération seul ne sépare

@@ -33,6 +33,37 @@ def _setup_paths(monkeypatch, tmp_path):
     monkeypatch.setenv("SHSS_CASES_CACHE_PATH", str(tmp_path / "cases.embeddings.json"))
 
 
+def test_cases_profile_derives_both_paths(monkeypatch, tmp_path):
+    monkeypatch.delenv("SHSS_CASES_PATH", raising=False)
+    monkeypatch.delenv("SHSS_CASES_CACHE_PATH", raising=False)
+    monkeypatch.setenv("SHSS_CASES_PROFILE", "dev")
+    monkeypatch.setattr(cases_module.Path, "home", staticmethod(lambda: tmp_path))
+
+    assert cases_module._cases_path() == tmp_path / ".shss" / "profiles" / "dev" / "cases.json"
+    assert (
+        cases_module._cache_path()
+        == tmp_path / ".shss" / "profiles" / "dev" / "cases.embeddings.json"
+    )
+
+
+def test_cases_path_explicit_override_wins_over_profile(monkeypatch, tmp_path):
+    monkeypatch.setenv("SHSS_CASES_PATH", str(tmp_path / "explicite.json"))
+    monkeypatch.setenv("SHSS_CASES_PROFILE", "dev")
+
+    assert cases_module._cases_path() == tmp_path / "explicite.json"
+
+
+def test_cases_profile_rejects_unsafe_name(monkeypatch):
+    monkeypatch.delenv("SHSS_CASES_PATH", raising=False)
+    monkeypatch.setenv("SHSS_CASES_PROFILE", "../../etc")
+
+    try:
+        cases_module._cases_path()
+        assert False, "devrait lever ValueError"
+    except ValueError:
+        pass
+
+
 def _isolate_embed_model_dirs(monkeypatch, tmp_path):
     """Comme _isolate_models_dirs() dans test_llm.py, pour le modele
     d'embeddings : jamais /opt/shss/models ni ~/.shss/models en vrai."""

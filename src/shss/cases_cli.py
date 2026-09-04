@@ -40,6 +40,11 @@ varie a chaque fois, le script le lit sur stdin au lieu de l'ignorer :
 
 lance sans argument (juste `shss-cases`), une fenetre s'ouvre si
 possible -- sinon ce texte s'affiche.
+
+plusieurs bases separees (systeme, dev, autre...) via un seul reglage :
+
+  export SHSS_CASES_PROFILE=dev
+  (va dans ~/.shss/profiles/dev/, cache d'embeddings inclus)
 """
 
 
