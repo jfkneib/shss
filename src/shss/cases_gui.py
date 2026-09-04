@@ -70,10 +70,16 @@ class _App:
         self.listbox = tk.Listbox(left, width=30, exportselection=False)
         self.listbox.pack(fill="y", expand=True, pady=(4, 0))
         self.listbox.bind("<<ListboxSelect>>", lambda _e: self._show_details(self._selected_case()))
+        # Double-clic = raccourci direct vers "Modifier..." : le panneau
+        # de droite n'est qu'un apercu en lecture seule (voir plus bas),
+        # sans ca la seule facon d'editer est de retrouver le bouton.
+        self.listbox.bind("<Double-Button-1>", lambda _e: self._open_edit())
 
         right = ttk.Frame(body)
         right.pack(side="left", fill="both", expand=True)
-        ttk.Label(right, text="Détails", font=("", 10, "bold")).pack(anchor="w")
+        ttk.Label(right, text="Détails (lecture seule — double-clic ou « Modifier… » pour éditer)", font=("", 10, "bold")).pack(
+            anchor="w"
+        )
         self.details = tk.Text(right, wrap="word", state="disabled", bg="#f5f5f5")
         self.details.pack(fill="both", expand=True, pady=(4, 0))
 
