@@ -367,6 +367,54 @@ def test_generate_bash_case_match_confirm_shows_score_and_id(monkeypatch, tmp_pa
     assert "energie" in seen["text"]
 
 
+def test_generate_bash_case_match_abbreviates_long_script_at_high_confidence(monkeypatch, tmp_path):
+    import shss.cases as cases_module
+
+    llm = _fake_shss(monkeypatch, tmp_path, "ne devrait jamais etre lu")
+    long_script = "#!/usr/bin/env bash\n" + "echo ligne\n" * 30  # > SHSS_CASES_PREVIEW_LINES (15)
+    case = {"id": "energie", "requests": ["x"], "script": long_script}
+    monkeypatch.setattr(cases_module, "best_match", lambda request, **kw: (case, 0.97, None))
+    seen = {}
+
+    result = llm.generate_bash(
+        "energie consommee par le pc", confirm=lambda text: seen.setdefault("text", text) or True
+    )
+
+    assert "echo ligne" not in seen["text"]  # resume, pas le texte entier
+    assert "32 lignes" in seen["text"]  # shebang + 30 "echo ligne" + le \n final
+    # le script REELEMENT ecrit/execute reste complet, seul l'apercu est abrege
+    script_path = result.rsplit(" ", 1)[-1]  # apres le prefixe SHSS_REQUEST=...
+    assert Path(script_path).read_text() == long_script
+
+
+def test_generate_bash_case_match_shows_full_script_when_short_even_at_high_confidence(monkeypatch, tmp_path):
+    import shss.cases as cases_module
+
+    llm = _fake_shss(monkeypatch, tmp_path, "ne devrait jamais etre lu")
+    case = {"id": "energie", "requests": ["x"], "script": "#!/usr/bin/env bash\necho watts\n"}
+    monkeypatch.setattr(cases_module, "best_match", lambda request, **kw: (case, 0.99, None))
+    seen = {}
+
+    llm.generate_bash("energie consommee par le pc", confirm=lambda text: seen.setdefault("text", text) or True)
+
+    assert "echo watts" in seen["text"]  # court : texte entier montre, meme a 99%
+
+
+def test_generate_bash_case_match_shows_full_script_below_preview_threshold(monkeypatch, tmp_path):
+    import shss.cases as cases_module
+
+    llm = _fake_shss(monkeypatch, tmp_path, "ne devrait jamais etre lu")
+    long_script = "#!/usr/bin/env bash\n" + "echo ligne\n" * 30
+    case = {"id": "energie", "requests": ["x"], "script": long_script}
+    # confiant, mais sous le seuil d'abreviation (0.95 par defaut)
+    monkeypatch.setattr(cases_module, "best_match", lambda request, **kw: (case, 0.80, None))
+    seen = {}
+
+    llm.generate_bash("energie consommee par le pc", confirm=lambda text: seen.setdefault("text", text) or True)
+
+    assert "echo ligne" in seen["text"]
+
+
 def test_generate_bash_template_case_pipes_payload_via_stdin(monkeypatch, tmp_path):
     import shlex
 

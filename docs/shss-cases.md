@@ -128,6 +128,16 @@ correct dépend du langage et de l'endroit exact où le texte atterrit —
 une variable d'env reste toujours de la donnée, jamais réinterprétée
 comme du code, quel que soit le langage du script.
 
+**L'aperçu montré avant exécution** (`shss a généré :`) commence
+toujours par `# cas « id » (X% de similarité)`. Pour un script long
+(plus de `SHSS_CASES_PREVIEW_LINES`, 15 par défaut) réutilisé avec une
+confiance élevée (au moins `SHSS_CASES_PREVIEW_THRESHOLD`, 0.95 par
+défaut), le texte entier n'est **pas** affiché — juste un résumé
+("script de N lignes, non affiché en entier"). Le script réellement
+écrit et exécuté reste toujours complet ; seul cet aperçu est
+raccourci, pour ne pas noyer l'écran avec un script de plusieurs
+centaines de lignes à chaque résolution.
+
 ## 5. Interface graphique
 
 Deux panneaux : la liste des cas à gauche, le détail du cas

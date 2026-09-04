@@ -304,6 +304,17 @@ def _env_int(name: str, default):
         return default
 
 
+def _env_float(name: str, default):
+    """float() of env var `name`, or `default` if unset/empty/unparseable."""
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        return default
+
+
 def _gpu_layers() -> int:
     """How many model layers to offload to the GPU.
 
@@ -460,9 +471,30 @@ class MiniLLM:
             # reutilise -- ajoute a l'apercu ("shss a genere :") pour
             # que la confiance du match soit toujours visible, pas
             # seulement en testant a part.
-            review_text = f"# cas « {case['id']} » ({score * 100:.1f}% de similarité)\n{case['script']}"
+            header = f"# cas « {case['id']} » ({score * 100:.1f}% de similarité)"
+
+            # Au-dela d'un seuil de confiance ET d'une longueur de
+            # script, l'apercu se contente d'un resume plutot que le
+            # texte entier : un script de quelques lignes ne coute rien
+            # a montrer meme a 100%, mais un long script (600+ lignes,
+            # constate en pratique avec le cas energie) reste du bruit
+            # meme a 96% -- les deux conditions ensemble, pas la
+            # confiance seule.
+            preview_score = _env_float("SHSS_CASES_PREVIEW_THRESHOLD", 0.95)
+            preview_lines = _env_int("SHSS_CASES_PREVIEW_LINES", 15)
+            n_lines = case["script"].count("\n") + 1
+            if score >= preview_score and n_lines > preview_lines:
+                script_preview = (
+                    f"(script de {n_lines} lignes, non affiché en entier -- "
+                    f"confiance élevée, {score * 100:.1f}% ; "
+                    "SHSS_CASES_PREVIEW_THRESHOLD/_LINES pour ajuster)"
+                )
+            else:
+                script_preview = case["script"]
+
+            review_text = f"{header}\n{script_preview}"
             if stdin_mode:
-                review_text = f"# cas « {case['id']} » ({score * 100:.1f}% de similarité)\n# entrée (stdin) : {payload!r}\n{case['script']}"
+                review_text = f"{header}\n# entrée (stdin) : {payload!r}\n{script_preview}"
             if confirm is not None and not confirm(review_text):
                 raise ResolutionCancelled()
 
