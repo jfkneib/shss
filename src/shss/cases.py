@@ -189,6 +189,30 @@ def remove_case(cases, case_id):
     return [c for c in cases if c["id"] != case_id]
 
 
+def update_case(cases, case_id, requests=None, script=None, note=None):
+    """Retourne une nouvelle liste avec `case_id` mis a jour en place
+    (position preservee dans la liste) -- seuls les champs fournis
+    (non None) sont remplaces, les autres restent tels quels. Leve
+    KeyError si `case_id` n'existe pas (utiliser add_case() pour en
+    creer un nouveau)."""
+    if _find_case(cases, case_id) is None:
+        raise KeyError(case_id)
+
+    def _updated(case):
+        if case["id"] != case_id:
+            return case
+        new_case = dict(case)
+        if requests is not None:
+            new_case["requests"] = list(requests)
+        if script is not None:
+            new_case["script"] = script
+        if note is not None:
+            new_case["note"] = note
+        return new_case
+
+    return [_updated(c) for c in cases]
+
+
 def _request_hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 

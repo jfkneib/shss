@@ -86,6 +86,29 @@ def test_remove_case_missing_id_raises_keyerror():
         pass
 
 
+def test_update_case_replaces_only_given_fields():
+    existing = [
+        {"id": "energie", "requests": ["x"], "script": "echo x", "note": "ancienne note"},
+        {"id": "tri", "requests": ["y"], "script": "echo y"},
+    ]
+    updated = cases_module.update_case(existing, "energie", script="echo nouveau")
+
+    energie = next(c for c in updated if c["id"] == "energie")
+    assert energie["script"] == "echo nouveau"
+    assert energie["requests"] == ["x"]  # inchange
+    assert energie["note"] == "ancienne note"  # inchange
+    # ordre et l'autre cas preserves
+    assert [c["id"] for c in updated] == ["energie", "tri"]
+
+
+def test_update_case_missing_id_raises_keyerror():
+    try:
+        cases_module.update_case([], "absent", note="x")
+        assert False, "devrait lever KeyError"
+    except KeyError:
+        pass
+
+
 def test_remove_case_round_trip():
     existing = [{"id": "energie", "requests": ["x"], "script": "echo hi"}]
     remaining = cases_module.remove_case(existing, "energie")

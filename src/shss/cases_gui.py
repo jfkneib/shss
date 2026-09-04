@@ -1,0 +1,402 @@
+"""Interface graphique Tk pour la base de cas curates -- une autre
+facade sur cases.py, au meme titre que cases_cli.py (aucune logique
+metier ici, juste des boutons qui appellent les memes fonctions
+testees). Optionnelle et auto-detectee : `shss-cases` sans argument
+appelle try_run(), qui rend la main immediatement (False) si tkinter
+n'est pas installe ou qu'aucun affichage n'est utilisable (ex: session
+SSH sans X) -- l'appelant se rabat alors sur le CLI, sans erreur.
+
+Tk n'est jamais importe au chargement du module (comme llama_cpp dans
+llm.py) : seulement a l'interieur de try_run(), pour ne jamais faire
+echouer un simple `import shss.cases_gui` sur une machine sans Tk.
+"""
+
+import queue
+import threading
+
+
+def try_run():
+    """Tente d'ouvrir la fenetre et tourne jusqu'a sa fermeture.
+    Retourne True si elle a pu s'ouvrir, False sinon (tkinter absent,
+    ou `tk.Tk()` echoue faute d'affichage) -- dans ce cas rien n'a ete
+    montre a l'ecran, l'appelant peut se rabattre sur autre chose."""
+    try:
+        import tkinter as tk
+    except ImportError:
+        return False
+
+    try:
+        root = tk.Tk()
+    except tk.TclError:
+        return False
+
+    _App(root)
+    root.mainloop()
+    return True
+
+
+class _App:
+    def __init__(self, root):
+        import tkinter as tk
+        from tkinter import ttk
+
+        from . import cases as cases_module
+
+        self._tk = tk
+        self._ttk = ttk
+        self._cases_module = cases_module
+        self.root = root
+        self._queue = queue.Queue()
+        self._busy = False
+
+        root.title("shss-cases — base de cas curatés")
+        root.geometry("820x520")
+        root.minsize(600, 400)
+
+        self._build_layout()
+        self._refresh_list()
+
+    # ------------------------------------------------------------ layout
+
+    def _build_layout(self):
+        tk, ttk = self._tk, self._ttk
+
+        body = ttk.Frame(self.root, padding=10)
+        body.pack(fill="both", expand=True)
+
+        left = ttk.Frame(body)
+        left.pack(side="left", fill="y", padx=(0, 10))
+        ttk.Label(left, text="Cas curatés", font=("", 10, "bold")).pack(anchor="w")
+        self.listbox = tk.Listbox(left, width=30, exportselection=False)
+        self.listbox.pack(fill="y", expand=True, pady=(4, 0))
+        self.listbox.bind("<<ListboxSelect>>", lambda _e: self._show_details(self._selected_case()))
+
+        right = ttk.Frame(body)
+        right.pack(side="left", fill="both", expand=True)
+        ttk.Label(right, text="Détails", font=("", 10, "bold")).pack(anchor="w")
+        self.details = tk.Text(right, wrap="word", state="disabled", bg="#f5f5f5")
+        self.details.pack(fill="both", expand=True, pady=(4, 0))
+
+        actions = ttk.Frame(self.root, padding=(10, 0, 10, 4))
+        actions.pack(fill="x")
+        ttk.Button(actions, text="Ajouter…", command=self._open_add).pack(side="left")
+        ttk.Button(actions, text="Modifier…", command=self._open_edit).pack(side="left", padx=4)
+        ttk.Button(actions, text="Supprimer", command=self._remove_selected).pack(side="left")
+        ttk.Separator(actions, orient="vertical").pack(side="left", fill="y", padx=8)
+        ttk.Button(actions, text="Tester une demande…", command=self._open_test).pack(side="left")
+        ttk.Separator(actions, orient="vertical").pack(side="left", fill="y", padx=8)
+        self.reindex_btn = ttk.Button(actions, text="Réindexer", command=self._reindex)
+        self.reindex_btn.pack(side="left")
+        self.model_btn = ttk.Button(actions, text="Modèle d'embeddings…", command=self._open_model)
+        self.model_btn.pack(side="left", padx=4)
+
+        bottom = ttk.Frame(self.root, padding=(10, 0, 10, 8))
+        bottom.pack(fill="x")
+        self.progress = ttk.Progressbar(bottom, mode="indeterminate", length=140)
+        self.status = ttk.Label(bottom, text="Prêt.", foreground="#555")
+        self.status.pack(side="left")
+
+    # ------------------------------------------------------------ state
+
+    def _set_status(self, text):
+        self.status.config(text=text)
+
+    def _refresh_list(self):
+        self.cases = self._cases_module.load_cases()
+        self.listbox.delete(0, "end")
+        for case in self.cases:
+            self.listbox.insert("end", case["id"])
+        self._show_details(None)
+        n = len(self.cases)
+        self._set_status(f"{n} cas curaté{'s' if n != 1 else ''}." if n else "Base vide.")
+
+    def _selected_case(self):
+        sel = self.listbox.curselection()
+        if not sel:
+            return None
+        return self.cases[sel[0]]
+
+    def _show_details(self, case):
+        self.details.config(state="normal")
+        self.details.delete("1.0", "end")
+        if case is not None:
+            lines = [f"id : {case['id']}", "", "formulations :"]
+            lines += [f"  • {r}" for r in case["requests"]]
+            if case.get("note"):
+                lines += ["", f"note : {case['note']}"]
+            lines += ["", "script :", "-" * 40, case["script"]]
+            self.details.insert("1.0", "\n".join(lines))
+        self.details.config(state="disabled")
+
+    # ------------------------------------------------------------ actions
+
+    def _open_add(self):
+        _CaseDialog(self, existing=None)
+
+    def _open_edit(self):
+        case = self._selected_case()
+        if case is None:
+            self._set_status("Sélectionne d'abord un cas à modifier.")
+            return
+        _CaseDialog(self, existing=case)
+
+    def _remove_selected(self):
+        from tkinter import messagebox
+
+        case = self._selected_case()
+        if case is None:
+            self._set_status("Sélectionne d'abord un cas à supprimer.")
+            return
+        if not messagebox.askyesno("Confirmer", f"Retirer le cas « {case['id']} » ?", parent=self.root):
+            return
+        cases = self._cases_module.remove_case(self._cases_module.load_cases(), case["id"])
+        self._cases_module.save_cases(cases)
+        self._set_status(f"Cas « {case['id']} » retiré.")
+        self._refresh_list()
+
+    def _open_test(self):
+        _TestDialog(self)
+
+    def _open_model(self):
+        _ModelDialog(self)
+
+    def _reindex(self):
+        cases = self._cases_module.load_cases()
+        if not cases:
+            self._set_status("Base vide, rien à indexer.")
+            return
+
+        def work():
+            return self._cases_module.reindex(cases)
+
+        def done(cache):
+            self._set_status(f"{len(cache['entries'])} formulation(s) indexée(s) pour {len(cases)} cas.")
+
+        self._run_background("Réindexation en cours…", work, done)
+
+    # ------------------------------------------------------------ background work
+
+    def _run_background(self, message, work, on_done):
+        if self._busy:
+            return
+        self._busy = True
+        self._set_status(message)
+        self.progress.pack(side="left", padx=(0, 8), before=self.status)
+        self.progress.start(12)
+        for btn in (self.reindex_btn, self.model_btn):
+            btn.state(["disabled"])
+
+        def runner():
+            try:
+                result = work()
+                self._queue.put(("ok", result))
+            except Exception as exc:  # noqa: BLE001 -- affiche toute erreur, ne masque rien
+                self._queue.put(("error", exc))
+
+        threading.Thread(target=runner, daemon=True).start()
+        self.root.after(100, lambda: self._poll(on_done))
+
+    def _poll(self, on_done):
+        try:
+            status, payload = self._queue.get_nowait()
+        except queue.Empty:
+            self.root.after(100, lambda: self._poll(on_done))
+            return
+
+        self.progress.stop()
+        self.progress.pack_forget()
+        for btn in (self.reindex_btn, self.model_btn):
+            btn.state(["!disabled"])
+        self._busy = False
+
+        if status == "error":
+            self._set_status(f"Erreur : {payload}")
+        else:
+            on_done(payload)
+
+
+class _CaseDialog:
+    """Fenêtre d'ajout ou de modification -- même formulaire pour les
+    deux, ne diffère que par ce qui est pré-rempli et l'appel final
+    (add_case vs update_case, déjà testés dans cases.py)."""
+
+    def __init__(self, app: _App, existing):
+        tk, ttk = app._tk, app._ttk
+        self.app = app
+        self.existing = existing
+
+        win = tk.Toplevel(app.root)
+        win.title("Modifier un cas" if existing else "Ajouter un cas")
+        win.geometry("520x520")
+        win.transient(app.root)
+        self.win = win
+
+        frame = ttk.Frame(win, padding=10)
+        frame.pack(fill="both", expand=True)
+
+        ttk.Label(frame, text="Identifiant").pack(anchor="w")
+        self.id_entry = ttk.Entry(frame)
+        self.id_entry.pack(fill="x")
+        if existing:
+            self.id_entry.insert(0, existing["id"])
+            self.id_entry.config(state="disabled")  # l'id ne se modifie pas ici
+
+        ttk.Label(frame, text="Formulations d'exemple (une par ligne)").pack(anchor="w", pady=(8, 0))
+        self.requests_text = tk.Text(frame, height=5)
+        self.requests_text.pack(fill="x")
+        if existing:
+            self.requests_text.insert("1.0", "\n".join(existing["requests"]))
+
+        ttk.Label(frame, text="Note (optionnel)").pack(anchor="w", pady=(8, 0))
+        self.note_entry = ttk.Entry(frame)
+        self.note_entry.pack(fill="x")
+        if existing and existing.get("note"):
+            self.note_entry.insert(0, existing["note"])
+
+        ttk.Label(frame, text="Script").pack(anchor="w", pady=(8, 0))
+        self.script_text = tk.Text(frame, height=12, font=("Courier", 10))
+        self.script_text.pack(fill="both", expand=True)
+        if existing:
+            self.script_text.insert("1.0", existing["script"])
+        else:
+            self.script_text.insert("1.0", "#!/usr/bin/env bash\n")
+
+        buttons = ttk.Frame(frame)
+        buttons.pack(fill="x", pady=(8, 0))
+        ttk.Button(buttons, text="Charger un fichier…", command=self._load_file).pack(side="left")
+        ttk.Button(buttons, text="Annuler", command=win.destroy).pack(side="right")
+        ttk.Button(buttons, text="Valider", command=self._submit).pack(side="right", padx=4)
+
+        self.error_label = ttk.Label(frame, foreground="#b33")
+        self.error_label.pack(anchor="w", pady=(4, 0))
+
+    def _load_file(self):
+        from tkinter import filedialog
+
+        path = filedialog.askopenfilename(parent=self.win, title="Choisir un script")
+        if not path:
+            return
+        with open(path, encoding="utf-8") as f:
+            content = f.read()
+        self.script_text.delete("1.0", "end")
+        self.script_text.insert("1.0", content)
+
+    def _submit(self):
+        cm = self.app._cases_module
+        case_id = (self.existing["id"] if self.existing else self.id_entry.get()).strip()
+        requests = [r for r in self.requests_text.get("1.0", "end").splitlines() if r.strip()]
+        script = self.script_text.get("1.0", "end")
+        note = self.note_entry.get().strip()
+
+        try:
+            if self.existing:
+                cases = cm.update_case(cm.load_cases(), case_id, requests=requests, script=script, note=note)
+            else:
+                if not case_id:
+                    raise ValueError("un identifiant est requis")
+                cases = cm.add_case(cm.load_cases(), case_id, requests, script, note=note)
+        except (ValueError, KeyError) as exc:
+            self.error_label.config(text=str(exc))
+            return
+
+        cm.save_cases(cases)
+        self.app._set_status(f"Cas « {case_id} » enregistré — pense à Réindexer.")
+        self.app._refresh_list()
+        self.win.destroy()
+
+
+class _TestDialog:
+    def __init__(self, app: _App):
+        tk, ttk = app._tk, app._ttk
+        self.app = app
+
+        win = tk.Toplevel(app.root)
+        win.title("Tester une demande")
+        win.geometry("480x360")
+        win.transient(app.root)
+
+        frame = ttk.Frame(win, padding=10)
+        frame.pack(fill="both", expand=True)
+
+        ttk.Label(frame, text="Demande en langage naturel").pack(anchor="w")
+        row = ttk.Frame(frame)
+        row.pack(fill="x", pady=(4, 8))
+        self.entry = ttk.Entry(row)
+        self.entry.pack(side="left", fill="x", expand=True)
+        self.entry.bind("<Return>", lambda _e: self._run())
+        ttk.Button(row, text="Tester", command=self._run).pack(side="left", padx=(6, 0))
+
+        self.results = tk.Text(frame, state="disabled", wrap="word")
+        self.results.pack(fill="both", expand=True)
+        self.entry.focus_set()
+
+    def _run(self):
+        cm = self.app._cases_module
+        query = self.entry.get().strip()
+        if not query:
+            return
+
+        cases = cm.load_cases()
+        cache = cm.load_cache()
+        lines = []
+        if cm.is_stale(cases, cache):
+            lines.append("(cache pas à jour -- Réindexer d'abord pour un résultat fiable)\n")
+
+        matches = cm.find_matches(query, cases=cases, cache=cache, top_k=5)
+        if not matches:
+            lines.append("Aucun match (base ou cache vide).")
+        else:
+            for case, score, matched_request in matches:
+                lines.append(f"{score * 100:5.1f}%  {case['id']}  (proche de : « {matched_request} »)")
+
+        self.results.config(state="normal")
+        self.results.delete("1.0", "end")
+        self.results.insert("1.0", "\n".join(lines))
+        self.results.config(state="disabled")
+
+
+class _ModelDialog:
+    def __init__(self, app: _App):
+        tk, ttk = app._tk, app._ttk
+        self.app = app
+        cm = app._cases_module
+
+        win = tk.Toplevel(app.root)
+        win.title("Modèle d'embeddings")
+        win.geometry("440x160")
+        win.transient(app.root)
+        self.win = win
+
+        frame = ttk.Frame(win, padding=10)
+        frame.pack(fill="both", expand=True)
+
+        path = cm.curated_embed_model_path()
+        import os
+
+        present = os.path.isfile(path)
+        state = f"déjà présent :\n{path}" if present else f"pas encore téléchargé (~{cm.CURATED_EMBED_MODEL_SIZE_MB} Mo)"
+        ttk.Label(frame, text=state, wraplength=400, justify="left").pack(anchor="w")
+
+        buttons = ttk.Frame(frame)
+        buttons.pack(fill="x", pady=(12, 0))
+        self.dl_btn = ttk.Button(buttons, text="Télécharger", command=self._download)
+        self.dl_btn.pack(side="left")
+        if present:
+            self.dl_btn.state(["disabled"])
+        ttk.Button(buttons, text="Fermer", command=win.destroy).pack(side="right")
+
+        self.status = ttk.Label(frame, text="")
+        self.status.pack(anchor="w", pady=(8, 0))
+
+    def _download(self):
+        cm = self.app._cases_module
+        self.dl_btn.state(["disabled"])
+        self.status.config(text="Téléchargement en cours…")
+
+        def work():
+            return cm.download_embedding_model()
+
+        def done(path):
+            self.status.config(text=f"Installé : {path}")
+
+        self.app._run_background("Téléchargement du modèle d'embeddings…", work, done)
