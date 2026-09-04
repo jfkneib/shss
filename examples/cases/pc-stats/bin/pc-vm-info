@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+#
+# pc-vm-info -- machines virtuelles KVM/libvirt : resume, detail complet
+# pour celles en cours d'execution, liste compacte (nom + etat) pour le
+# reste -- sur une machine avec des dizaines de VM definies mais
+# eteintes la plupart du temps, les detailler toutes noierait le
+# rapport pour un interet limite.
+#
+# LIMITE CONNUE : le chemin "VM en cours" n'a pas pu etre verifie en
+# conditions reelles sur cette machine (aucune VM en cours d'execution
+# au moment ou ce script a ete ecrit, les 27 definies etaient toutes
+# eteintes) -- construit a partir de la documentation virsh, pas
+# observe. A verifier la prochaine fois qu'une VM tourne reellement.
+
+set -u
+export LC_NUMERIC=C
+
+if ! command -v virsh >/dev/null 2>&1; then
+    echo "pc-vm-info: virsh (libvirt) n'est pas installe." >&2
+    exit 1
+fi
+
+if ! virsh list --all >/dev/null 2>&1; then
+    echo "pc-vm-info: libvirt ne repond pas (service pas lance, ou pas les droits)." >&2
+    exit 1
+fi
+
+label()
+{
+    local text="$1"
+    local width="$2"
+    local n=$(( width - ${#text} ))
+    (( n < 0 )) && n=0
+    printf '%s%*s: ' "$text" "$n" ""
+}
+
+main()
+{
+    echo "############################################################"
+    echo "                MACHINES VIRTUELLES (KVM/libvirt)"
+    echo "Machine : $(hostname)"
+    echo "############################################################"
+    echo
+
+    local all running total_n running_n
+    all=$(virsh list --all --name 2>/dev/null | grep -v '^$')
+    running=$(virsh list --name 2>/dev/null | grep -v '^$')
+    total_n=0
+    running_n=0
+    [[ -n "$all" ]] && total_n=$(wc -l <<<"$all")
+    [[ -n "$running" ]] && running_n=$(wc -l <<<"$running")
+
+    echo "Résumé"
+    echo "------------------------------------------------------------"
+    echo "$(label "VM définies" 16)$total_n"
+    echo "$(label "En cours" 16)$running_n"
+    echo "$(label "Éteintes" 16)$(( total_n - running_n ))"
+    echo
+
+    if [[ -n "$running" ]]; then
+        echo "VM en cours d'exécution :"
+        echo "------------------------------------------------------------"
+        while read -r vm; do
+            [[ -z "$vm" ]] && continue
+            local info vcpus mem_kib autostart mem_go
+            info=$(virsh dominfo "$vm" 2>/dev/null)
+            vcpus=$(awk -F': *' '/^CPU\(s\)/ {print $2}' <<<"$info")
+            mem_kib=$(awk -F': *' '/^Used memory/ {print $2}' <<<"$info" | awk '{print $1}')
+            autostart=$(awk -F': *' '/^Autostart/ {print $2}' <<<"$info")
+            mem_go=$(awk -v k="${mem_kib:-0}" 'BEGIN { printf "%.1f", k / 1024 / 1024 }')
+
+            echo "$vm"
+            echo "  vCPU : ${vcpus:-?}   RAM allouée : ${mem_go} Go   Autostart : ${autostart:-?}"
+            virsh domblklist "$vm" 2>/dev/null | tail -n +3 | while read -r target source; do
+                [[ -n "$source" && "$source" != "-" ]] && echo "  Disque ($target) : $source"
+            done
+            echo
+        done <<<"$running"
+    fi
+
+    if [[ -n "$all" ]]; then
+        echo "Toutes les VM définies :"
+        echo "------------------------------------------------------------"
+        while read -r vm; do
+            [[ -z "$vm" ]] && continue
+            local state
+            state=$(virsh domstate "$vm" 2>/dev/null)
+            printf "  %-30s %s\n" "$vm" "${state:-?}"
+        done <<<"$all"
+    fi
+}
+
+main "$@"
