@@ -49,7 +49,28 @@ export SHSS_CASES_PROFILE=pc-stats     # ou #@pc-stats@ ... @# en ligne
 ## État actuel
 
 11 cas curatés dans le profil `pc-stats`, chacun avec son script sous
-`bin/` :
+`bin/` : la colonne « Script » ci-dessous, c'est où *lire et modifier*
+chaque outil. Le contenu réellement utilisé par shss est une **copie
+complète**, embarquée dans `cases.json`/`cases.seed.json` — jamais un
+appel vers ce fichier `bin/` par son chemin. Le cas curaté doit rester
+autonome (marcher depuis n'importe quel répertoire, sur n'importe
+quelle machine), pas dépendre de l'endroit où ce dépôt a été cloné.
+Deux cas (`disques`, `uptime`) avaient été ajoutés avec un appel
+externe par chemin — ça fonctionnait par hasard tant que tout était
+lancé depuis la racine du dépôt, et cassait sinon ; corrigé. Pour
+`disques`, c'est de nouveau une copie directe de `bin/pc-disk-info`.
+Pour `uptime`, ça reste un cas particulier : sa logique de wrapper
+(extraction du mois depuis `SHSS_REQUEST` ou stdin, voir la table)
+appelait `bin/pc-uptime`, qui sourçait à son tour `lib/pc-stats-
+common.sh` par un chemin relatif à lui-même — le même problème un
+niveau plus bas. Le cas embarque maintenant tout d'un bloc (wrapper +
+logique de `pc-uptime` + fonctions de la lib), donc **une modification
+à `bin/pc-uptime` ou à `lib/pc-stats-common.sh` ne se répercute pas
+automatiquement dans ce cas-là** — à réappliquer à la main dans le
+script du cas (`shss-cases edit uptime --script-file ...`). Pour les
+10 autres cas, une copie directe suffit : `shss-cases edit <id>
+--script-file bin/<script>` + `reindex` après toute modification du
+script correspondant sous `bin/`.
 
 | Cas              | Script             | Ce qu'il montre |
 |------------------|--------------------|--------|
