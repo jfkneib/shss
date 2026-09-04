@@ -15,6 +15,25 @@ import queue
 import threading
 
 
+def _add_text_context_menu(tk, widget):
+    """Menu clic-droit (Couper/Copier/Coller/Tout sélectionner) sur un
+    tk.Text -- Ctrl-C/X/V marchent deja nativement des que le widget a
+    le focus clavier, mais rien n'indique a l'oeil que c'est possible
+    sur un tk.Text brut (pas de menu contextuel par defaut, contrairement
+    a un champ de texte natif de l'OS)."""
+    menu = tk.Menu(widget, tearoff=0)
+    menu.add_command(label="Couper", command=lambda: widget.event_generate("<<Cut>>"))
+    menu.add_command(label="Copier", command=lambda: widget.event_generate("<<Copy>>"))
+    menu.add_command(label="Coller", command=lambda: widget.event_generate("<<Paste>>"))
+    menu.add_separator()
+    menu.add_command(label="Tout sélectionner", command=lambda: widget.tag_add("sel", "1.0", "end"))
+
+    def _popup(event):
+        menu.tk_popup(event.x_root, event.y_root)
+
+    widget.bind("<Button-3>", _popup)
+
+
 def try_run():
     """Tente d'ouvrir la fenetre et tourne jusqu'a sa fermeture.
     Retourne True si elle a pu s'ouvrir, False sinon (tkinter absent,
@@ -262,6 +281,7 @@ class _CaseDialog:
         ttk.Label(frame, text="Formulations d'exemple (une par ligne)").pack(anchor="w", pady=(8, 0))
         self.requests_text = tk.Text(frame, height=5)
         self.requests_text.pack(fill="x")
+        _add_text_context_menu(tk, self.requests_text)
         if existing:
             self.requests_text.insert("1.0", "\n".join(existing["requests"]))
 
@@ -313,6 +333,7 @@ class _CaseDialog:
         ttk.Label(frame, text="Script").pack(anchor="w", pady=(8, 0))
         self.script_text = tk.Text(frame, height=12, font=("Courier", 10))
         self.script_text.pack(fill="both", expand=True)
+        _add_text_context_menu(tk, self.script_text)
         if existing:
             self.script_text.insert("1.0", existing["script"])
         else:

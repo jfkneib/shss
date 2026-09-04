@@ -414,3 +414,18 @@ def test_generate_bash_plain_case_match_still_gets_request_env_var(monkeypatch, 
     assert "printf" not in result  # pas de pipe, contrairement a un cas gabarit
     assert result.startswith(f"SHSS_REQUEST={shlex.quote('energie consommee par le pc')} ")
     assert result.endswith(".sh")
+
+
+def test_generate_bash_case_match_exposes_prefix_suffix_score_and_id(monkeypatch, tmp_path):
+    import shss.cases as cases_module
+
+    llm = _fake_shss(monkeypatch, tmp_path, "ne devrait jamais etre lu")
+    case = {"id": "energie", "requests": ["x"], "script": "#!/usr/bin/env bash\necho watts\n"}
+    monkeypatch.setattr(cases_module, "best_match", lambda request, **kw: (case, 0.8833, None))
+
+    result = llm.generate_bash("energie consommee par le pc", prefix="echo pre ", suffix=" # suite")
+
+    assert "SHSS_PREFIX='echo pre '" in result
+    assert "SHSS_SUFFIX=' # suite'" in result
+    assert "SHSS_MATCH_SCORE=0.8833" in result
+    assert "SHSS_CASE_ID=energie" in result

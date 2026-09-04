@@ -452,7 +452,7 @@ class MiniLLM:
 
         match = best_match(request)
         if match is not None:
-            case, _score, payload = match
+            case, score, payload = match
             stdin_mode = case.get("input") == "stdin" and payload is not None
 
             review_text = case["script"]
@@ -464,13 +464,25 @@ class MiniLLM:
             script_path = _write_script(case["script"])
             import shlex
 
-            # La demande complete (pas juste le contenu entre guillemets)
-            # est toujours accessible via une variable d'environnement --
-            # jamais collee dans le code du script (pas de risque
-            # d'injection, contrairement a une substitution textuelle) et
-            # utilisable pareil en bash ($SHSS_REQUEST), en python
-            # (os.environ["SHSS_REQUEST"]) ou n'importe quel langage.
-            env_prefix = f"SHSS_REQUEST={shlex.quote(request)} "
+            # Contexte toujours disponible pour un cas qui matche, par
+            # convention, via des variables d'environnement -- jamais
+            # collees dans le code du script (pas de risque d'injection,
+            # contrairement a une substitution textuelle) et lisibles
+            # pareil en bash ($SHSS_REQUEST), en python
+            # (os.environ["SHSS_REQUEST"]) ou n'importe quel langage :
+            #   SHSS_REQUEST     la demande complete d'origine
+            #   SHSS_PREFIX      le bash avant la balise sur la ligne
+            #   SHSS_SUFFIX      le bash apres la balise sur la ligne
+            #   SHSS_MATCH_SCORE score de similarite qui a fait matcher ce cas
+            #   SHSS_CASE_ID     l'identifiant du cas
+            env_vars = {
+                "SHSS_REQUEST": request,
+                "SHSS_PREFIX": prefix,
+                "SHSS_SUFFIX": suffix,
+                "SHSS_MATCH_SCORE": f"{score:.4f}",
+                "SHSS_CASE_ID": case["id"],
+            }
+            env_prefix = "".join(f"{name}={shlex.quote(value)} " for name, value in env_vars.items())
             if stdin_mode:
                 # Le contenu variable ne touche jamais le code du script
                 # non plus (pas d'injection possible) : il passe par
