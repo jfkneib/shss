@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+#
+# pc-power-log -- ajoute une ligne de mesure a data/power.csv.
+# Concu pour etre appele periodiquement par pc-power-log.timer (voir
+# systemd/), mais utilisable directement pour tester.
+#
+# Doit tourner en root (c'est le cas par defaut pour un service systemd
+# systeme) pour que la lecture RAPL (CPU) marche sans intervention --
+# lance a la main sans sudo, la colonne CPU reste a 0 (cpu_mesure=0),
+# comme le reste de pc-power.
+
+set -u
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DATA_DIR="$SCRIPT_DIR/../data"
+CSV_FILE="$DATA_DIR/power.csv"
+HEADER="timestamp,cpu_w,ram_w,gpu_w,disk_w,screen_w,usb_w,mobo_w,psu_loss_w,total_w,cpu_mesure"
+
+mkdir -p "$DATA_DIR"
+
+if [[ ! -f "$CSV_FILE" ]]; then
+    echo "$HEADER" > "$CSV_FILE"
+fi
+
+"$SCRIPT_DIR/pc-power" --csv >> "$CSV_FILE"

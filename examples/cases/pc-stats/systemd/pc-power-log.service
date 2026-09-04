@@ -1,0 +1,8 @@
+[Unit]
+Description=Enregistre un échantillon de consommation électrique (pc-stats)
+
+[Service]
+Type=oneshot
+# Chemin absolu volontaire (systemd n'a pas de $HOME/CWD fiable) --
+# a ajuster si le depot change d'emplacement.
+ExecStart=/home/jfk/git/dev/shss/examples/cases/pc-stats/bin/pc-power-log
