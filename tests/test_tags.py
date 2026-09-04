@@ -1,3 +1,4 @@
+import os
 import sys
 from pathlib import Path
 
@@ -45,6 +46,79 @@ def test_expand_line_passes_surrounding_context():
 
 def _upper_resolver(request, prefix, suffix):
     return request.upper()
+
+
+def test_find_requests_strips_profile_prefix():
+    assert find_requests("ls #@pc-stats@ energie consommee @#") == ["energie consommee"]
+
+
+def test_expand_line_profile_prefix_stripped_from_request(monkeypatch):
+    monkeypatch.delenv("SHSS_CASES_PROFILE", raising=False)
+    assert expand_line("#@pc-stats@ energie @#", _upper_resolver) == "ENERGIE"
+
+
+def test_expand_line_profile_prefix_sets_env_var_during_resolution(monkeypatch):
+    monkeypatch.delenv("SHSS_CASES_PROFILE", raising=False)
+    seen = {}
+
+    def resolver(request, prefix, suffix):
+        seen["profile_during"] = os.environ.get("SHSS_CASES_PROFILE")
+        return request
+
+    expand_line("#@pc-stats@ energie @#", resolver)
+
+    assert seen["profile_during"] == "pc-stats"
+    assert "SHSS_CASES_PROFILE" not in os.environ  # restaure apres coup
+
+
+def test_expand_line_profile_prefix_restores_previous_value(monkeypatch):
+    monkeypatch.setenv("SHSS_CASES_PROFILE", "dev")
+    seen = {}
+
+    def resolver(request, prefix, suffix):
+        seen["profile_during"] = os.environ.get("SHSS_CASES_PROFILE")
+        return request
+
+    expand_line("#@pc-stats@ energie @#", resolver)
+
+    assert seen["profile_during"] == "pc-stats"
+    assert os.environ["SHSS_CASES_PROFILE"] == "dev"  # remis, pas efface
+
+
+def test_expand_line_without_profile_prefix_leaves_env_var_untouched(monkeypatch):
+    monkeypatch.delenv("SHSS_CASES_PROFILE", raising=False)
+    seen = {}
+
+    def resolver(request, prefix, suffix):
+        seen["profile_during"] = os.environ.get("SHSS_CASES_PROFILE")
+        return request
+
+    expand_line("#@ energie @#", resolver)
+
+    assert seen["profile_during"] is None
+
+
+def test_resolve_pending_tag_profile_prefix_on_open_tag():
+    line = "ls #@pc-stats@ trie par taille"
+    point = len(line)
+    new_line, new_point = resolve_pending_tag(line, point, _upper_resolver)
+    assert new_line == "ls TRIE PAR TAILLE"
+    assert new_point == len(new_line)
+
+
+def test_resolve_pending_tag_profile_prefix_on_closed_tag_sets_env_var(monkeypatch):
+    monkeypatch.delenv("SHSS_CASES_PROFILE", raising=False)
+    seen = {}
+
+    def resolver(request, prefix, suffix):
+        seen["profile_during"] = os.environ.get("SHSS_CASES_PROFILE")
+        return request.upper()
+
+    line = "ls #@pc-stats@ trie par taille @#"
+    resolve_pending_tag(line, len(line), resolver)
+
+    assert seen["profile_during"] == "pc-stats"
+    assert "SHSS_CASES_PROFILE" not in os.environ
 
 
 def test_resolve_pending_tag_no_tag_returns_unchanged():

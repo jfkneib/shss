@@ -211,6 +211,22 @@ tape un nom encore inexistant pour en créer un dès le premier
 « Ajouter… » dedans). Le titre de la fenêtre rappelle le profil actif,
 pour ne jamais se tromper de base en cours d'usage.
 
+**Directement dans la balise, au moment de la demande** — sans
+exporter quoi que ce soit avant, et sans devoir se souvenir du profil
+actif dans ce terminal :
+
+```text
+#@pc-stats@ energie consommee par le pc @#
+```
+
+`profil@` juste après `#@` (collé, sans espace avant `profil`) force
+`SHSS_CASES_PROFILE` pour **cette résolution précise seulement** — la
+variable d'environnement du shell (si définie) est restaurée
+immédiatement après, jamais modifiée durablement. La syntaxe
+historique `#@ demande @#` (avec un espace juste après `#@`) reste
+totalement inchangée : aucune demande existante n'est affectée, rien à
+migrer.
+
 Au-delà de l'organisation, séparer les bases **réduit le risque de faux
 positif** entre cas sans rapport : moins une base mélange de domaines
 différents, moins une formulation généraliste risque d'intercepter par
