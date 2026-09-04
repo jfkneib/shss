@@ -79,6 +79,7 @@ GPU_DETAILS=""
 DISK_DETAILS=""
 DISK_ITEMS=()
 SCREEN_DETAILS=""
+SCREEN_ITEMS=()
 USB_DETAILS=""
 
 ###############################################################################
@@ -412,7 +413,6 @@ detect_disks()
 detect_screens()
 {
     local count=0
-    local details=""
 
     for connector in /sys/class/drm/*; do
         [[ -f "$connector/status" ]] || continue
@@ -435,12 +435,15 @@ detect_screens()
 
         count=$((count + 1))
 
-        details="${details}${name}=${power}W, "
+        # Un element par ecran (tableau), meme raison que DISK_ITEMS :
+        # colle sur une seule ligne, ca deborde des que plusieurs
+        # ecrans sont connectes.
+        SCREEN_ITEMS+=("${name}=${power}W")
     done
 
     if (( count > 0 )); then
         SCREEN_METHOD="estimé"
-        SCREEN_DETAILS="${count} écran(s) : ${details%, }"
+        SCREEN_DETAILS="${count} écran(s), détail ci-dessous"
     else
         SCREEN_DETAILS="aucun écran détecté"
     fi
@@ -589,6 +592,9 @@ main()
         print_detail "  $item"
     done
     print_line "Écran"  "$SCREEN_POWER" "$SCREEN_METHOD" "$SCREEN_DETAILS"
+    for item in "${SCREEN_ITEMS[@]}"; do
+        print_detail "  $item"
+    done
     print_line "USB"    "$USB_POWER"    "$USB_METHOD"    "$USB_DETAILS"
 
     echo "├──────────────┼────────────┼────────────┼──────────────────────────────────────────────┤"
