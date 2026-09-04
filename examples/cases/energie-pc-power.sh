@@ -40,9 +40,15 @@ KWH_PRICE="${KWH_PRICE:-0.25}"
 ###############################################################################
 
 if [[ -t 1 ]]; then
-    BOLD="\033[1m"
-    RESET="\033[0m"
-    DIM="\033[2m"
+    # $'...' (ANSI-C quoting), pas "..." : c'est ce qui transforme
+    # \033 en vrai octet ESC au moment de l'affectation. Avec des
+    # guillemets normaux, bash garde \033 tel quel (5 caracteres
+    # litteraux), et echo l'affiche sans l'interpreter -- constate en
+    # pratique : "\033[1m" s'affichait tel quel au lieu de mettre en
+    # gras.
+    BOLD=$'\033[1m'
+    RESET=$'\033[0m'
+    DIM=$'\033[2m'
 else
     BOLD=""
     RESET=""
@@ -71,6 +77,7 @@ CPU_DETAILS=""
 RAM_DETAILS=""
 GPU_DETAILS=""
 DISK_DETAILS=""
+DISK_ITEMS=()
 SCREEN_DETAILS=""
 USB_DETAILS=""
 
@@ -324,7 +331,6 @@ detect_gpu()
 detect_disks()
 {
     local total=0
-    local details=""
     local found=0
 
     for dev in /sys/block/*; do
@@ -367,7 +373,12 @@ detect_disks()
                 power=0.8
             fi
 
-            details="${details}${device}=${model:-HDD} (${power}W), "
+            # Un element par disque (tableau), pas une chaine
+            # concatenee : colle sur une seule ligne, ca deborde la
+            # colonne "Detail" (42 caracteres) des qu'il y a plus de 2-3
+            # disques -- constate en pratique avec 8 disques sur cette
+            # machine, la mise en page du tableau cassait completement.
+            DISK_ITEMS+=("${device}=${model:-HDD} (${power}W)")
         else
             # SSD / NVMe.
             if [[ "$device" == nvme* ]]; then
@@ -376,7 +387,7 @@ detect_disks()
                 power=1.5
             fi
 
-            details="${details}${device}=${model:-SSD} (${power}W), "
+            DISK_ITEMS+=("${device}=${model:-SSD} (${power}W)")
         fi
 
         total=$(awk -v a="$total" -v b="$power" \
@@ -388,7 +399,7 @@ detect_disks()
     if (( found )); then
         DISK_POWER="$total"
         DISK_METHOD="estimé"
-        DISK_DETAILS="${details%, }"
+        DISK_DETAILS="${#DISK_ITEMS[@]} disque(s), détail ci-dessous"
     else
         DISK_DETAILS="aucun disque détecté"
     fi
@@ -498,6 +509,17 @@ print_line()
         "$component" "$power" "$method" "$details"
 }
 
+# Ligne de detail supplementaire (un disque, par exemple) : memes
+# colonnes, memes largeurs que print_line, mais sans repeter le
+# composant/puissance/methode -- juste pour que les traits verticaux du
+# tableau restent alignes.
+print_detail()
+{
+    local details="$1"
+
+    printf "│ %-12s │ %10s │ %-10s │ %-42s │\n" "" "" "" "$details"
+}
+
 ###############################################################################
 # Informations système
 ###############################################################################
@@ -563,6 +585,9 @@ main()
     print_line "RAM"    "$RAM_POWER"    "$RAM_METHOD"    "$RAM_DETAILS"
     print_line "GPU"    "$GPU_POWER"    "$GPU_METHOD"    "$GPU_DETAILS"
     print_line "SSD/HDD" "$DISK_POWER" "$DISK_METHOD"    "$DISK_DETAILS"
+    for item in "${DISK_ITEMS[@]}"; do
+        print_detail "  $item"
+    done
     print_line "Écran"  "$SCREEN_POWER" "$SCREEN_METHOD" "$SCREEN_DETAILS"
     print_line "USB"    "$USB_POWER"    "$USB_METHOD"    "$USB_DETAILS"
 
