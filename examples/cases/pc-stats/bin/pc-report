@@ -1,0 +1,175 @@
+#!/usr/bin/env bash
+#
+# pc-report -- tableau de bord sante : synthese des signaux "ca merite
+# un oeil" a travers ce que couvrent les autres outils pc-stats
+# (disques pleins, charge systeme, services en echec, paquets casses,
+# conteneurs plantes). Ne remplace pas les pc-* individuels (ils
+# restent la reference pour le detail) -- juste le coup d'oeil du
+# matin, avec une ligne de resume en haut.
+#
+# Seuils utilises, et pourquoi :
+#  - disque >90% = avertissement, >80% = a surveiller -- convention
+#    courante (au-dela de 90% la marge de manoeuvre devient etroite,
+#    perf/fragmentation peuvent s'en ressentir).
+#  - charge (load average 1 min) > nproc = plus de taches pretes a
+#    tourner que de coeurs logiques disponibles -- signal de
+#    saturation standard, pas une regle absolue (un pic court est
+#    normal, seul un load DURABLEMENT superieur est un vrai signal).
+#  - RAM disponible (MemAvailable, pas juste "libre" -- compte le
+#    cache reclamable) <10% du total = avertissement.
+#  - PAS de seuil sur la temperature CPU/GPU : aucune valeur critique
+#    fiable trouvee sur cette machine (trip points ACPI a -274000,
+#    inutilisables ; rien dans `sensors -u` cote "crit") -- inventer
+#    un seuil non fonde serait pire que ne rien afficher. Voir
+#    pc-temp-info pour le detail brut.
+
+set -u
+export LC_NUMERIC=C
+
+label()
+{
+    local text="$1"
+    local width="$2"
+    local n=$(( width - ${#text} ))
+    (( n < 0 )) && n=0
+    printf '%s%*s: ' "$text" "$n" ""
+}
+
+WARN=()
+INFO=()
+
+check_disks()
+{
+    local line src type pcent target pcent_n
+    while IFS= read -r line; do
+        read -r src type pcent target <<<"$line"
+        [[ -z "$src" ]] && continue
+        case "$type" in
+            tmpfs|devtmpfs|overlay|squashfs|efivarfs) continue ;;
+        esac
+        pcent_n="${pcent%\%}"
+        [[ "$pcent_n" =~ ^[0-9]+$ ]] || continue
+        if (( pcent_n >= 90 )); then
+            WARN+=("Disque $target a ${pcent} ($src)")
+        elif (( pcent_n >= 80 )); then
+            INFO+=("Disque $target a ${pcent} -- a surveiller ($src)")
+        fi
+    done < <(df -h --output=source,fstype,pcent,target 2>/dev/null | tail -n +2)
+}
+
+check_load_ram()
+{
+    local load1 cores
+    load1=$(awk '{print $1}' /proc/loadavg)
+    cores=$(nproc 2>/dev/null || echo 1)
+    if awk -v l="$load1" -v c="$cores" 'BEGIN { exit !(l > c) }'; then
+        WARN+=("Charge systeme a $load1 pour $cores coeurs logiques (plus de taches pretes que de coeurs)")
+    fi
+
+    local mem_total mem_avail pct
+    mem_total=$(awk '/^MemTotal:/ {print $2}' /proc/meminfo)
+    mem_avail=$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo)
+    if [[ -n "$mem_total" && -n "$mem_avail" && "$mem_total" -gt 0 ]]; then
+        pct=$(awk -v t="$mem_total" -v a="$mem_avail" 'BEGIN { printf "%.0f", (a / t) * 100 }')
+        if (( pct < 10 )); then
+            WARN+=("RAM disponible a seulement ${pct}%")
+        fi
+    fi
+}
+
+check_services()
+{
+    command -v systemctl >/dev/null 2>&1 || return 0
+    local failed failed_n
+    failed=$(systemctl list-units --type=service --state=failed --no-legend --no-pager 2>/dev/null | awk '{print $2}')
+    [[ -z "$failed" ]] && return 0
+    failed_n=$(wc -l <<<"$failed")
+    WARN+=("$failed_n service(s) systemd en echec : $(tr '\n' ' ' <<<"$failed" | xargs)")
+}
+
+check_packages()
+{
+    command -v dpkg >/dev/null 2>&1 || return 0
+    local broken upgradable_n
+    broken=$(LC_ALL=C dpkg --audit 2>&1)
+    [[ -n "$broken" ]] && WARN+=("des paquets sont dans un etat casse (voir pc-pkg-info)")
+    if command -v apt >/dev/null 2>&1; then
+        upgradable_n=$(LC_ALL=C apt list --upgradable 2>/dev/null | grep -vc "^Listing...")
+        (( upgradable_n > 0 )) && INFO+=("$upgradable_n mise(s) a jour disponible(s)")
+    fi
+}
+
+check_docker()
+{
+    command -v docker >/dev/null 2>&1 || return 0
+    docker info >/dev/null 2>&1 || return 0
+    local exited
+    exited=$(docker ps -a --filter "status=exited" --format '{{.Names}}|{{.Status}}' 2>/dev/null | grep -v 'Exited (0)')
+    [[ -n "$exited" ]] && while IFS='|' read -r name status; do
+        WARN+=("conteneur docker '$name' arrete en erreur : $status")
+    done <<<"$exited"
+}
+
+check_vms()
+{
+    command -v virsh >/dev/null 2>&1 || return 0
+    virsh list --all >/dev/null 2>&1 || return 0
+    local running running_n
+    running=$(virsh list --name 2>/dev/null | grep -v '^$')
+    if [[ -n "$running" ]]; then
+        running_n=$(wc -l <<<"$running")
+        INFO+=("$running_n VM en cours d'execution : $(tr '\n' ' ' <<<"$running" | xargs)")
+    fi
+}
+
+main()
+{
+    echo "############################################################"
+    echo "                    BILAN SANTÉ DU PC"
+    echo "Machine : $(hostname)"
+    echo "############################################################"
+    echo
+
+    check_disks
+    check_load_ram
+    check_services
+    check_packages
+    check_docker
+    check_vms
+
+    if (( ${#WARN[@]} == 0 && ${#INFO[@]} == 0 )); then
+        echo "Rien à signaler."
+        echo
+    else
+        echo "Résumé"
+        echo "------------------------------------------------------------"
+        echo "$(label "Avertissements" 20)${#WARN[@]}"
+        echo "$(label "À surveiller" 20)${#INFO[@]}"
+        echo
+
+        if (( ${#WARN[@]} > 0 )); then
+            echo "⚠ Avertissements :"
+            echo "------------------------------------------------------------"
+            local w
+            for w in "${WARN[@]}"; do
+                echo "  - $w"
+            done
+            echo
+        fi
+
+        if (( ${#INFO[@]} > 0 )); then
+            echo "ⓘ À surveiller :"
+            echo "------------------------------------------------------------"
+            local i
+            for i in "${INFO[@]}"; do
+                echo "  - $i"
+            done
+            echo
+        fi
+    fi
+
+    echo "Détail par domaine : pc-disk-info, pc-power, pc-service-info,"
+    echo "pc-pkg-info, pc-docker-info, pc-vm-info, pc-temp-info, pc-net-info."
+}
+
+main "$@"

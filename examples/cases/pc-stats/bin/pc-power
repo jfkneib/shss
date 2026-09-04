@@ -601,7 +601,10 @@ print_system_info()
     hostname=$(hostname)
     kernel=$(uname -r)
 
-    cpu=$(lscpu 2>/dev/null |
+    # LC_ALL=C : lscpu localise ses libelles ("Model name:" devient
+    # "Nom de modèle :" sous fr_FR) -- constate en pratique, "CPU :
+    # inconnu" en sortie alors que lscpu avait bien la donnee.
+    cpu=$(LC_ALL=C lscpu 2>/dev/null |
         awk -F: '/Model name:/ {
             sub(/^[ \t]+/, "", $2)
             print $2
