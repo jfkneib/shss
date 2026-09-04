@@ -501,6 +501,23 @@ calculate_total()
 # Affichage
 ###############################################################################
 
+# Complete "$1" a "$2" caracteres avec des espaces (justifie a gauche).
+# Pas juste printf "%-Ns" : bash compte des OCTETS pour la largeur de
+# champ, pas des caracteres -- un accent (2 octets en UTF-8, "é") fait
+# desaligner la colonne d'une case des qu'une cellule en contient un et
+# pas sa voisine (ex: "estimé" vs "estimation") -- constate en
+# pratique. ${#texte}, lui, compte bien les caracteres (bash est
+# locale-aware pour ça), donc calculer le padding a la main plutot que
+# de laisser printf le faire.
+pad()
+{
+    local text="$1"
+    local width="$2"
+    local n=$(( width - ${#text} ))
+    (( n < 0 )) && n=0
+    printf '%s%*s' "$text" "$n" ""
+}
+
 print_line()
 {
     local component="$1"
@@ -508,8 +525,8 @@ print_line()
     local method="$3"
     local details="$4"
 
-    printf "│ %-12s │ %8.2f W │ %-10s │ %-42s │\n" \
-        "$component" "$power" "$method" "$details"
+    printf "│ %s │ %8.2f W │ %s │ %s │\n" \
+        "$(pad "$component" 12)" "$power" "$(pad "$method" 14)" "$(pad "$details" 42)"
 }
 
 # Ligne de detail supplementaire (un disque, par exemple) : memes
@@ -520,7 +537,7 @@ print_detail()
 {
     local details="$1"
 
-    printf "│ %-12s │ %10s │ %-10s │ %-42s │\n" "" "" "" "$details"
+    printf "│ %s │ %10s │ %s │ %s │\n" "$(pad "" 12)" "" "$(pad "" 14)" "$(pad "$details" 42)"
 }
 
 ###############################################################################
@@ -580,9 +597,9 @@ main()
     echo "${BOLD}Consommation estimée${RESET}"
     echo
 
-    echo "┌──────────────┬────────────┬────────────┬──────────────────────────────────────────────┐"
-    echo "│ Composant    │ Puissance  │ Méthode    │ Détail                                       │"
-    echo "├──────────────┼────────────┼────────────┼──────────────────────────────────────────────┤"
+    echo "┌──────────────┬────────────┬────────────────┬────────────────────────────────────────────┐"
+    echo "│ Composant    │ Puissance  │ Méthode        │ Détail                                     │"
+    echo "├──────────────┼────────────┼────────────────┼────────────────────────────────────────────┤"
 
     print_line "CPU"    "$CPU_POWER"    "$CPU_METHOD"    "$CPU_DETAILS"
     print_line "RAM"    "$RAM_POWER"    "$RAM_METHOD"    "$RAM_DETAILS"
@@ -597,9 +614,9 @@ main()
     done
     print_line "USB"    "$USB_POWER"    "$USB_METHOD"    "$USB_DETAILS"
 
-    echo "├──────────────┼────────────┼────────────┼──────────────────────────────────────────────┤"
-    printf "│ ${BOLD}TOTAL${RESET}        │ ${BOLD}%8.2f W${RESET} │            │ estimation logicielle                      │\n" "$total"
-    echo "└──────────────┴────────────┴────────────┴──────────────────────────────────────────────┘"
+    echo "├──────────────┼────────────┼────────────────┼────────────────────────────────────────────┤"
+    printf "│ ${BOLD}TOTAL${RESET}        │ ${BOLD}%8.2f W${RESET} │                │ estimation logicielle                      │\n" "$total"
+    echo "└──────────────┴────────────┴────────────────┴────────────────────────────────────────────┘"
 
     echo
     echo "${BOLD}Énergie${RESET}"
