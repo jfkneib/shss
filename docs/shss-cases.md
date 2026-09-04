@@ -103,11 +103,23 @@ guillemet ouvrant et fermant de la demande (simple ou double) est :
 Résolu, ça donne une ligne comme :
 
 ```text
-printf '%s' 'select | id | name |   from itsmlocal.glpi_entities;' | /tmp/shss-.../fix.py
+printf '%s' 'select | id | name |   from itsmlocal.glpi_entities;' | SHSS_REQUEST='...' /tmp/shss-.../fix.py
 ```
 
 — pas juste le chemin du script : le `printf | script` fait partie du
 résultat, avec le contenu correctement échappé pour bash (`shlex.quote`).
+
+**`SHSS_REQUEST`** : la demande complète d'origine (pas juste le
+contenu entre guillemets) est toujours accessible via cette variable
+d'environnement, pour n'importe quel cas (gabarit ou pas). Utile quand
+un script a besoin de plus de contexte que le seul contenu extrait —
+en bash : `"$SHSS_REQUEST"` ; en python : `os.environ["SHSS_REQUEST"]`.
+Toujours une vraie variable d'environnement, jamais collée dans le
+code du script : contrairement à une substitution textuelle
+(`@@variable@@` remplacé directement dans le source), l'échappement
+correct dépend du langage et de l'endroit exact où le texte atterrit —
+une variable d'env reste toujours de la donnée, jamais réinterprétée
+comme du code, quel que soit le langage du script.
 
 ## 5. Interface graphique
 

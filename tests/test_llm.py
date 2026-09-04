@@ -318,7 +318,8 @@ def test_generate_bash_uses_confident_case_match_without_calling_llm(monkeypatch
 
     result = llm.generate_bash("energie consommee par le pc")
 
-    assert Path(result).read_text() == case["script"]
+    script_path = result.rsplit(" ", 1)[-1]  # apres le prefixe SHSS_REQUEST=...
+    assert Path(script_path).read_text() == case["script"]
     assert llm._llm.last_prompt is None  # le LLM de generation n'a jamais tourne
     events = read_events()
     assert events[0]["kind"] == "case"
@@ -353,6 +354,8 @@ def test_generate_bash_case_match_still_honors_confirm(monkeypatch, tmp_path):
 
 
 def test_generate_bash_template_case_pipes_payload_via_stdin(monkeypatch, tmp_path):
+    import shlex
+
     import shss.cases as cases_module
     from shss.history import read_events
 
@@ -366,26 +369,40 @@ def test_generate_bash_template_case_pipes_payload_via_stdin(monkeypatch, tmp_pa
     payload = "select | id | name |   from t;"
     monkeypatch.setattr(cases_module, "best_match", lambda request, **kw: (case, 0.9, payload))
 
-    result = llm.generate_bash('corrige moi ma ligne bash : "select | id | name |   from t;"')
+    written = {}
+    real_write_script = llm_module._write_script
+
+    def spy_write_script(text):
+        path = real_write_script(text)
+        written["path"] = path
+        return path
+
+    monkeypatch.setattr(llm_module, "_write_script", spy_write_script)
+
+    request = 'corrige moi ma ligne bash : "select | id | name |   from t;"'
+    result = llm.generate_bash(request)
 
     # le resultat est une ligne bash (pipe), pas juste le chemin du script
     assert result.startswith("printf '%s' ")
     assert payload in result  # shlex.quote garde le contenu lisible pour ce texte simple
-    assert result.endswith(".py")
+    assert result.endswith(written["path"])
+    # la demande complete est passee au script via une variable d'env,
+    # jamais collee dans son code
+    assert f"SHSS_REQUEST={shlex.quote(request)}" in result
+    assert request not in Path(written["path"]).read_text()
     # le script lui-meme, sur disque, ne contient jamais le payload en dur
-    # (rsplit sur le DERNIER "|" : le payload contient lui-meme des "|",
-    # seul celui separant printf du chemin du script est garanti a la fin)
-    script_path = result.rsplit("|", 1)[1].strip()
-    assert payload not in Path(script_path).read_text()
+    assert payload not in Path(written["path"]).read_text()
 
     events = read_events()
     assert events[0]["kind"] == "case"
     assert events[0]["result"] == result
 
 
-def test_generate_bash_plain_case_match_unaffected_by_template_support(monkeypatch, tmp_path):
-    # Un cas sans "input" garde exactement le comportement d'avant :
-    # juste le chemin du script, pas de pipe.
+def test_generate_bash_plain_case_match_still_gets_request_env_var(monkeypatch, tmp_path):
+    # Un cas sans "input" garde le comportement d'avant (pas de pipe),
+    # mais dispose quand meme de SHSS_REQUEST.
+    import shlex
+
     import shss.cases as cases_module
 
     llm = _fake_shss(monkeypatch, tmp_path, "ne devrait jamais etre lu")
@@ -394,5 +411,6 @@ def test_generate_bash_plain_case_match_unaffected_by_template_support(monkeypat
 
     result = llm.generate_bash("energie consommee par le pc")
 
-    assert result == str(Path(result))  # un chemin nu, pas un "printf ... |"
-    assert "printf" not in result
+    assert "printf" not in result  # pas de pipe, contrairement a un cas gabarit
+    assert result.startswith(f"SHSS_REQUEST={shlex.quote('energie consommee par le pc')} ")
+    assert result.endswith(".sh")

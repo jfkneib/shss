@@ -462,15 +462,22 @@ class MiniLLM:
                 raise ResolutionCancelled()
 
             script_path = _write_script(case["script"])
-            if stdin_mode:
-                import shlex
+            import shlex
 
+            # La demande complete (pas juste le contenu entre guillemets)
+            # est toujours accessible via une variable d'environnement --
+            # jamais collee dans le code du script (pas de risque
+            # d'injection, contrairement a une substitution textuelle) et
+            # utilisable pareil en bash ($SHSS_REQUEST), en python
+            # (os.environ["SHSS_REQUEST"]) ou n'importe quel langage.
+            env_prefix = f"SHSS_REQUEST={shlex.quote(request)} "
+            if stdin_mode:
                 # Le contenu variable ne touche jamais le code du script
-                # (pas d'injection possible) : il passe par stdin, comme
-                # n'importe quel pipe bash normal.
-                result = f"printf '%s' {shlex.quote(payload)} | {script_path}"
+                # non plus (pas d'injection possible) : il passe par
+                # stdin, comme n'importe quel pipe bash normal.
+                result = f"printf '%s' {shlex.quote(payload)} | {env_prefix}{script_path}"
             else:
-                result = script_path
+                result = f"{env_prefix}{script_path}"
 
             log_event(request, prefix, suffix, result, "case")
             return result
