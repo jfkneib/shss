@@ -353,6 +353,20 @@ def test_generate_bash_case_match_still_honors_confirm(monkeypatch, tmp_path):
     assert not (tmp_path / "scripts").exists()
 
 
+def test_generate_bash_case_match_confirm_shows_score_and_id(monkeypatch, tmp_path):
+    import shss.cases as cases_module
+
+    llm = _fake_shss(monkeypatch, tmp_path, "ne devrait jamais etre lu")
+    case = {"id": "energie", "requests": ["x"], "script": "#!/usr/bin/env bash\necho watts\n"}
+    monkeypatch.setattr(cases_module, "best_match", lambda request, **kw: (case, 0.8412, None))
+    seen = {}
+
+    llm.generate_bash("energie consommee par le pc", confirm=lambda text: seen.setdefault("text", text) or True)
+
+    assert "84.1%" in seen["text"]
+    assert "energie" in seen["text"]
+
+
 def test_generate_bash_template_case_pipes_payload_via_stdin(monkeypatch, tmp_path):
     import shlex
 

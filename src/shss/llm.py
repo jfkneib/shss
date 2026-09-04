@@ -455,9 +455,14 @@ class MiniLLM:
             case, score, payload = match
             stdin_mode = case.get("input") == "stdin" and payload is not None
 
-            review_text = case["script"]
+            # Le score n'apparaissait jusqu'ici que via `shss-cases
+            # test`, jamais au moment reel ou un cas est effectivement
+            # reutilise -- ajoute a l'apercu ("shss a genere :") pour
+            # que la confiance du match soit toujours visible, pas
+            # seulement en testant a part.
+            review_text = f"# cas « {case['id']} » ({score * 100:.1f}% de similarité)\n{case['script']}"
             if stdin_mode:
-                review_text = f"# entrée (stdin) : {payload!r}\n{review_text}"
+                review_text = f"# cas « {case['id']} » ({score * 100:.1f}% de similarité)\n# entrée (stdin) : {payload!r}\n{case['script']}"
             if confirm is not None and not confirm(review_text):
                 raise ResolutionCancelled()
 
