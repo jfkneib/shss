@@ -43,11 +43,32 @@ l'exclut par sécurité si jamais un tout un `~/.shss/profiles/<nom>/`
 - **Scripts appelés via `SHSS_PROFILE_DIR`, jamais copiés dans les
   cas** : shss fournit cette variable d'environnement à tout cas qui
   matche, pointant vers `~/.shss/profiles/<nom>/` sur la machine
-  courante — jamais un chemin figé vers ce dépôt. Un cas type :
-  `exec "$SHSS_PROFILE_DIR/scripts/<os>/bin/<script>"`. Deux cas de
+  courante — jamais un chemin figé vers ce dépôt. Deux cas de
   `pc-stats` avaient d'abord été écrits avec un chemin codé en dur
   (dont un vers `/home/jfk/...`, spécifique à une seule machine) —
   fonctionnait par hasard, cassait dès qu'exécuté ailleurs.
+- **Le script d'un cas route lui-même vers le bon OS** (`uname -s`),
+  jamais un chemin `<os>/` figé dans le cas : les *demandes*
+  (`requests`) sont partagées entre OS, un cas gagnerait à l'être
+  aussi plutôt que de dupliquer 60+ formulations dans un
+  `cases.<os>.seed.json` séparé par OS. Un cas type sous `pc-stats` :
+
+  ```bash
+  os="$(uname -s)"
+  case "$os" in
+      Linux)
+          exec "$SHSS_PROFILE_DIR/scripts/linux/bin/<script>"
+          ;;
+      *)
+          echo "<id> : pas encore pris en charge sur cet OS ($os) -- seul linux/ existe aujourd'hui." >&2
+          exit 1
+          ;;
+  esac
+  ```
+
+  Ajouter un `windows/` plus tard n'ajoute qu'une branche `Windows_NT)`
+  ici (répétée dans chaque cas concerné) — jamais un second fichier de
+  cas ni des formulations dupliquées.
 
 ## Checklist avant de considérer un cas terminé
 

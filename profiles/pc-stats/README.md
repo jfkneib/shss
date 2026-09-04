@@ -78,18 +78,21 @@ elles, ne vivent pas dans ce dépôt du tout : voir plus bas.
 
 **Architecture des cas** : chaque cas est un petit script d'appel
 (quelques lignes) qui exécute le vrai outil via
-`$SHSS_PROFILE_DIR/scripts/linux/bin/<nom>` — une variable
+`$SHSS_PROFILE_DIR/scripts/<os>/bin/<nom>` — une variable
 d'environnement que shss fournit à tout cas qui matche (voir
 `docs/shss-cases.md`), pointant vers le répertoire du profil actif sur
 la machine courante (`~/.shss/profiles/pc-stats/` ici). Jamais un
 chemin codé en dur vers ce dépôt : `SHSS_PROFILE_DIR` reste valide
 partout où le profil a été installé, contrairement à un chemin vers un
-clone git précis. `uptime` illustre bien la logique : son cas extrait
-juste le mois demandé (`SHSS_REQUEST` ou stdin), puis appelle
-`$SHSS_PROFILE_DIR/scripts/linux/bin/pc-uptime` qui, lui, source
-`lib/pc-stats-common.sh` à côté de lui — d'où l'étape `cp -r
-profiles/pc-stats/linux` ci-dessus, qui embarque `bin/` et
-`lib/` ensemble.
+clone git précis. Le `<os>` n'est pas figé non plus : chaque cas
+détecte l'OS courant (`uname -s`) et route vers `linux/bin/...` (seul
+OS couvert aujourd'hui) — les demandes (`requests`), elles, restent
+partagées, jamais dupliquées par OS (voir `profiles/README.md`).
+`uptime` illustre bien la logique complète : son cas extrait juste le
+mois demandé (`SHSS_REQUEST` ou stdin), puis route vers
+`scripts/linux/bin/pc-uptime` qui, lui, source `lib/pc-stats-
+common.sh` à côté de lui — d'où l'étape `cp -r profiles/pc-stats/linux`
+ci-dessus, qui embarque `bin/` et `lib/` ensemble.
 
 Deux cas (`disques`, `uptime`) avaient d'abord été ajoutés avec un
 chemin codé en dur vers ce dépôt (`/home/jfk/git/dev/shss/...`) —
