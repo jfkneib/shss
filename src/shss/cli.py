@@ -51,17 +51,51 @@ def build_key_bindings(llm: MiniLLM):
     return kb
 
 
+def _resolver_with_display(llm: MiniLLM):
+    """Build a resolver that shows what a matched case or a freshly
+    generated script actually was — not just the resolved command
+    line, which for a case is only 'SHSS_..._SCORE=0.9500 ... /tmp/
+    shss-xxx.sh' (the score buried in an env var assignment, easy to
+    miss, exactly what was reported as "not shown"). Mirrors
+    inline.py's record_display: confirm() always returns True here
+    (this is the REPL / -c mode, no interactive "utiliser ce résultat
+    ?" gate — that's Ctrl-G-only, see build_key_bindings), it's only
+    used to capture the display text as a side effect.
+
+    Printed only when it differs from the resolved line itself
+    (skipped for a plain inline LLM one-liner, where display ==
+    result and the caller's own '→ {expanded}' would just repeat it).
+    """
+
+    def make_resolver():
+        holder = {}
+
+        def show(text: str) -> bool:
+            holder["text"] = text
+            return True
+
+        def resolver(request: str, prefix: str, suffix: str) -> str:
+            holder.pop("text", None)
+            try:
+                result = llm.generate_bash(request, prefix, suffix, confirm=show)
+            except Exception as exc:
+                return f"echo 'shss llm error: {exc}' 1>&2"
+            text = holder.get("text")
+            if text and text != result:
+                print(f"\nshss a généré :\n{text}\n")
+            return result
+
+        return resolver
+
+    return make_resolver()
+
+
 def repl(llm: MiniLLM) -> int:
     from prompt_toolkit import PromptSession
 
     shell = PersistentShell()
     session = PromptSession(key_bindings=build_key_bindings(llm))
-
-    def resolver(request: str, prefix: str, suffix: str) -> str:
-        try:
-            return llm.generate_bash(request, prefix, suffix)
-        except Exception as exc:
-            return f"echo 'shss llm error: {exc}' 1>&2"
+    resolver = _resolver_with_display(llm)
 
     try:
         while True:
@@ -91,7 +125,7 @@ def repl(llm: MiniLLM) -> int:
 def run_once(llm: MiniLLM, line: str) -> int:
     shell = PersistentShell()
     try:
-        expanded = expand_line(line, llm.generate_bash)
+        expanded = expand_line(line, _resolver_with_display(llm))
         if expanded != line:
             print(f"→ {expanded}")
         output, code = shell.run(expanded)
