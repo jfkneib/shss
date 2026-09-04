@@ -34,6 +34,12 @@ export LC_NUMERIC=C
 
 INTERVAL="${1:-2}"
 KWH_PRICE="${KWH_PRICE:-0.25}"
+# Defaut 24h volontairement irrealiste (personne ne laisse son PC
+# allume en continu) -- sert de borne haute explicite plutot que de
+# deviner un usage "typique" a la place de l'utilisateur. A ajuster :
+# HOURS_PER_DAY=8 ./pc-power.sh pour une estimation sur une journee de
+# travail, par exemple.
+HOURS_PER_DAY="${HOURS_PER_DAY:-24}"
 
 ###############################################################################
 # Couleurs
@@ -626,11 +632,11 @@ main()
     local cost_day
     local cost_month
 
-    kwh_day=$(awk -v w="$total" \
-        'BEGIN {printf "%.3f", w * 24 / 1000}')
+    kwh_day=$(awk -v w="$total" -v h="$HOURS_PER_DAY" \
+        'BEGIN {printf "%.3f", w * h / 1000}')
 
-    kwh_month=$(awk -v w="$total" \
-        'BEGIN {printf "%.2f", w * 24 * 30 / 1000}')
+    kwh_month=$(awk -v w="$total" -v h="$HOURS_PER_DAY" \
+        'BEGIN {printf "%.2f", w * h * 30 / 1000}')
 
     cost_day=$(awk -v k="$kwh_day" -v p="$KWH_PRICE" \
         'BEGIN {printf "%.2f", k*p}')
@@ -638,7 +644,8 @@ main()
     cost_month=$(awk -v k="$kwh_month" -v p="$KWH_PRICE" \
         'BEGIN {printf "%.2f", k*p}')
 
-    echo "  À ${total} W constants :"
+    echo "  En supposant ${HOURS_PER_DAY}h/jour à ${total} W constants"
+    echo "  (HOURS_PER_DAY=8 ./pc-power.sh pour une autre hypothèse) :"
     echo "    1 jour   : ${kwh_day} kWh  ≈ ${cost_day} €"
     echo "    30 jours : ${kwh_month} kWh ≈ ${cost_month} €"
     echo
