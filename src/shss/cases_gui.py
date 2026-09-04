@@ -271,14 +271,19 @@ class _CaseDialog:
         if existing and existing.get("note"):
             self.note_entry.insert(0, existing["note"])
 
+        # ttk.Checkbutton n'accepte pas -wraplength en argument direct
+        # sur toutes les versions de Tk (leve TclError) -- le texte long
+        # va dans un Label separe (qui, lui, le supporte), la case a
+        # cocher garde un intitule court.
         self.stdin_var = tk.BooleanVar(value=bool(existing and existing.get("input") == "stdin"))
-        ttk.Checkbutton(
+        ttk.Checkbutton(frame, text="Cas « gabarit »", variable=self.stdin_var).pack(anchor="w", pady=(8, 0))
+        ttk.Label(
             frame,
-            text='Cas « gabarit » : le contenu entre guillemets de la demande varie à chaque '
-            "fois et est transmis au script sur son entrée standard (ex: sys.stdin.read())",
-            variable=self.stdin_var,
+            text="Le contenu entre guillemets de la demande varie à chaque fois et est "
+            "transmis au script sur son entrée standard (ex: sys.stdin.read()).",
             wraplength=460,
-        ).pack(anchor="w", pady=(8, 0), fill="x")
+            foreground="#666",
+        ).pack(anchor="w", fill="x")
 
         threshold_row = ttk.Frame(frame)
         threshold_row.pack(anchor="w", fill="x", pady=(4, 0))
