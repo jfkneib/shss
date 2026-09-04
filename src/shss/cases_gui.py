@@ -465,17 +465,23 @@ class _TestDialog:
         if payload is not None:
             lines.append(f"contenu entre guillemets détecté : {payload!r}\n")
 
-        matches = cm.find_matches(query, cases=cases, cache=cache, top_k=5)
-        if not matches:
-            lines.append("Aucun match (base ou cache vide).")
-        else:
-            for case, score, matched_request in matches:
-                seuil = case.get("threshold", cm._threshold())
-                marque = "→ réutilisé" if score >= seuil else "en dessous du seuil"
-                lines.append(
-                    f"{score * 100:5.1f}%  {case['id']}  (seuil {seuil * 100:.0f}%, {marque})\n"
-                    f"        proche de : « {matched_request} »"
-                )
+        try:
+            matches = cm.find_matches(query, cases=cases, cache=cache, top_k=5)
+        except FileNotFoundError as exc:
+            matches = None
+            lines.append(f"Erreur : {exc}")
+
+        if matches is not None:
+            if not matches:
+                lines.append("Aucun match (base ou cache vide).")
+            else:
+                for case, score, matched_request in matches:
+                    seuil = case.get("threshold", cm._threshold())
+                    marque = "→ réutilisé" if score >= seuil else "en dessous du seuil"
+                    lines.append(
+                        f"{score * 100:5.1f}%  {case['id']}  (seuil {seuil * 100:.0f}%, {marque})\n"
+                        f"        proche de : « {matched_request} »"
+                    )
 
         self.results.config(state="normal")
         self.results.delete("1.0", "end")

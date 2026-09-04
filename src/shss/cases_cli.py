@@ -172,7 +172,11 @@ def _cmd_test(args):
     if payload is not None:
         print(f"contenu entre guillemets detecte : {payload!r}", file=sys.stderr)
 
-    matches = cases_module.find_matches(args.query, cases=cases, cache=cache, top_k=args.top)
+    try:
+        matches = cases_module.find_matches(args.query, cases=cases, cache=cache, top_k=args.top)
+    except FileNotFoundError as exc:
+        print(f"shss-cases: {exc}", file=sys.stderr)
+        return 1
     if not matches:
         print("aucun match (base ou cache vide)")
         return 0
@@ -208,7 +212,11 @@ def _cmd_reindex(args):
         print("(base vide, rien a indexer)")
         return 0
 
-    cache = cases_module.reindex(cases, force=args.force)
+    try:
+        cache = cases_module.reindex(cases, force=args.force)
+    except FileNotFoundError as exc:
+        print(f"shss-cases: {exc}", file=sys.stderr)
+        return 1
     print(f"{len(cache['entries'])} formulation(s) indexee(s) pour {len(cases)} cas")
     return 0
 

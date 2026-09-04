@@ -100,6 +100,42 @@ def test_cmd_edit_clear_threshold_removes_field(monkeypatch, tmp_path):
     assert "threshold" not in cases_module.load_cases()[0]
 
 
+def test_cmd_reindex_missing_embedding_model_gives_friendly_error(monkeypatch, tmp_path, capsys):
+    _setup_paths(monkeypatch, tmp_path)
+    cases_module.save_cases([{"id": "x", "requests": ["une demande"], "script": "echo x"}])
+
+    def _boom(*a, **kw):
+        raise FileNotFoundError("GGUF introuvable pour le modele d'embeddings")
+
+    monkeypatch.setattr(cases_module, "reindex", _boom)
+
+    args = cli_module.build_parser().parse_args(["reindex"])
+    code = cli_module._cmd_reindex(args)
+
+    assert code == 1
+    err = capsys.readouterr().err
+    assert "GGUF introuvable" in err
+    assert "Traceback" not in err
+
+
+def test_cmd_test_missing_embedding_model_gives_friendly_error(monkeypatch, tmp_path, capsys):
+    _setup_paths(monkeypatch, tmp_path)
+    cases_module.save_cases([{"id": "x", "requests": ["une demande"], "script": "echo x"}])
+
+    def _boom(*a, **kw):
+        raise FileNotFoundError("GGUF introuvable pour le modele d'embeddings")
+
+    monkeypatch.setattr(cases_module, "find_matches", _boom)
+
+    args = cli_module.build_parser().parse_args(["test", "une demande"])
+    code = cli_module._cmd_test(args)
+
+    assert code == 1
+    err = capsys.readouterr().err
+    assert "GGUF introuvable" in err
+    assert "Traceback" not in err
+
+
 def test_cmd_gui_returns_0_when_it_opens(monkeypatch):
     monkeypatch.setattr(gui_module, "try_run", lambda: True)
     args = cli_module.build_parser().parse_args(["gui"])
