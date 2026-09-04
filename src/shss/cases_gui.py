@@ -126,6 +126,8 @@ class _App:
                 lines += ["", f"note : {case['note']}"]
             if case.get("input") == "stdin":
                 lines += ["", "gabarit : oui -- le contenu entre guillemets est transmis au script sur stdin"]
+            if "threshold" in case:
+                lines += ["", f"seuil propre a ce cas : {case['threshold']}"]
             lines += ["", "script :", "-" * 40, case["script"]]
             self.details.insert("1.0", "\n".join(lines))
         self.details.config(state="disabled")
@@ -264,6 +266,16 @@ class _CaseDialog:
             wraplength=460,
         ).pack(anchor="w", pady=(8, 0), fill="x")
 
+        threshold_row = ttk.Frame(frame)
+        threshold_row.pack(anchor="w", fill="x", pady=(4, 0))
+        ttk.Label(threshold_row, text="Seuil de confiance propre à ce cas (vide = seuil global) :").pack(
+            side="left"
+        )
+        self.threshold_entry = ttk.Entry(threshold_row, width=6)
+        self.threshold_entry.pack(side="left", padx=(6, 0))
+        if existing and "threshold" in existing:
+            self.threshold_entry.insert(0, str(existing["threshold"]))
+
         ttk.Label(frame, text="Script").pack(anchor="w", pady=(8, 0))
         self.script_text = tk.Text(frame, height=12, font=("Courier", 10))
         self.script_text.pack(fill="both", expand=True)
@@ -299,17 +311,36 @@ class _CaseDialog:
         script = self.script_text.get("1.0", "end")
         note = self.note_entry.get().strip()
         input_mode = "stdin" if self.stdin_var.get() else ""
+        threshold_raw = self.threshold_entry.get().strip()
+
+        try:
+            threshold = float(threshold_raw) if threshold_raw else ("" if self.existing else None)
+        except ValueError:
+            self.error_label.config(text=f"seuil invalide : {threshold_raw!r} (un nombre entre 0 et 1)")
+            return
 
         try:
             if self.existing:
                 cases = cm.update_case(
-                    cm.load_cases(), case_id, requests=requests, script=script, note=note, input_mode=input_mode
+                    cm.load_cases(),
+                    case_id,
+                    requests=requests,
+                    script=script,
+                    note=note,
+                    input_mode=input_mode,
+                    threshold=threshold,
                 )
             else:
                 if not case_id:
                     raise ValueError("un identifiant est requis")
                 cases = cm.add_case(
-                    cm.load_cases(), case_id, requests, script, note=note, input_mode=input_mode or None
+                    cm.load_cases(),
+                    case_id,
+                    requests,
+                    script,
+                    note=note,
+                    input_mode=input_mode or None,
+                    threshold=threshold,
                 )
         except (ValueError, KeyError) as exc:
             self.error_label.config(text=str(exc))
@@ -367,7 +398,12 @@ class _TestDialog:
             lines.append("Aucun match (base ou cache vide).")
         else:
             for case, score, matched_request in matches:
-                lines.append(f"{score * 100:5.1f}%  {case['id']}  (proche de : « {matched_request} »)")
+                seuil = case.get("threshold", cm._threshold())
+                marque = "→ réutilisé" if score >= seuil else "en dessous du seuil"
+                lines.append(
+                    f"{score * 100:5.1f}%  {case['id']}  (seuil {seuil * 100:.0f}%, {marque})\n"
+                    f"        proche de : « {matched_request} »"
+                )
 
         self.results.config(state="normal")
         self.results.delete("1.0", "end")

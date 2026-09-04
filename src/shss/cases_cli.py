@@ -50,7 +50,13 @@ def _cmd_list(args):
         return 0
     for case in cases:
         requests = case["requests"]
-        print(f"{case['id']:<24} {requests[0]}")
+        tags = []
+        if case.get("input") == "stdin":
+            tags.append("gabarit")
+        if "threshold" in case:
+            tags.append(f"seuil={case['threshold']}")
+        suffix = f"  [{', '.join(tags)}]" if tags else ""
+        print(f"{case['id']:<24} {requests[0]}{suffix}")
         for extra in requests[1:]:
             print(f"{'':<24} {extra}")
         if case.get("note"):
@@ -74,6 +80,7 @@ def _cmd_add(args):
             script,
             note=args.note or "",
             input_mode="stdin" if args.stdin else None,
+            threshold=args.threshold,
         )
     except ValueError as exc:
         print(f"shss-cases: {exc}", file=sys.stderr)
@@ -100,9 +107,21 @@ def _cmd_edit(args):
     elif args.no_stdin:
         input_mode = ""
 
+    threshold = None
+    if args.threshold is not None:
+        threshold = args.threshold
+    elif args.clear_threshold:
+        threshold = ""
+
     try:
         cases = cases_module.update_case(
-            cases, args.id, requests=args.request, script=script, note=args.note, input_mode=input_mode
+            cases,
+            args.id,
+            requests=args.request,
+            script=script,
+            note=args.note,
+            input_mode=input_mode,
+            threshold=threshold,
         )
     except KeyError:
         print(f"shss-cases: aucun cas « {args.id} » (utilise 'add' pour en creer un)", file=sys.stderr)
@@ -111,7 +130,13 @@ def _cmd_edit(args):
     cases_module.save_cases(cases)
     changed = [
         name
-        for name, value in (("formulations", args.request), ("script", script), ("note", args.note))
+        for name, value in (
+            ("formulations", args.request),
+            ("script", script),
+            ("note", args.note),
+            ("gabarit", input_mode),
+            ("seuil", threshold),
+        )
         if value is not None
     ]
     print(f"cas « {args.id} » mis a jour ({', '.join(changed) or 'rien'})")
@@ -153,7 +178,12 @@ def _cmd_test(args):
         return 0
 
     for case, score, matched_request in matches:
-        print(f"{score * 100:5.1f}%  {case['id']:<24} (proche de : {matched_request!r})")
+        seuil = case.get("threshold", cases_module._threshold())
+        marque = "-> reutilise" if score >= seuil else "  en dessous du seuil"
+        print(
+            f"{score * 100:5.1f}%  {case['id']:<24} (seuil {seuil * 100:.0f}%, {marque}) "
+            f"proche de : {matched_request!r}"
+        )
     return 0
 
 
@@ -232,6 +262,16 @@ def build_parser():
             "script sur son entree standard, jamais colle dans le code"
         ),
     )
+    p_add.add_argument(
+        "--threshold",
+        type=float,
+        metavar="0.0-1.0",
+        help=(
+            "seuil de confiance propre a ce cas (defaut : SHSS_CASES_THRESHOLD, "
+            "0.70) -- un cas gabarit (--stdin) en a souvent besoin d'un plus eleve "
+            "(voir 'shss-cases test' pour verifier avant de choisir)"
+        ),
+    )
     p_add.set_defaults(func=_cmd_add)
 
     p_edit = sub.add_parser(
@@ -255,6 +295,10 @@ def build_parser():
     p_edit.add_argument("--note", help="remplace la note")
     p_edit.add_argument("--stdin", action="store_true", help="fait de ce cas un gabarit (voir 'add --stdin')")
     p_edit.add_argument("--no-stdin", action="store_true", help="repasse ce cas en cas normal (retire 'input')")
+    p_edit.add_argument("--threshold", type=float, metavar="0.0-1.0", help="fixe le seuil propre a ce cas")
+    p_edit.add_argument(
+        "--clear-threshold", action="store_true", help="retire le seuil propre a ce cas (retour au seuil global)"
+    )
     p_edit.set_defaults(func=_cmd_edit)
 
     p_remove = sub.add_parser("remove", help="retire un cas")

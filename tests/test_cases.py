@@ -222,6 +222,50 @@ def test_extract_payload_none_when_no_quotes():
     assert normalized == "energie consommee par le pc"
 
 
+def test_add_case_with_threshold_sets_field():
+    cases = cases_module.add_case([], "fix", ["x"], "echo x", threshold=0.85)
+    assert cases[0]["threshold"] == 0.85
+
+
+def test_update_case_can_set_and_clear_threshold():
+    cases = [{"id": "fix", "requests": ["x"], "script": "echo x"}]
+    updated = cases_module.update_case(cases, "fix", threshold=0.85)
+    assert updated[0]["threshold"] == 0.85
+
+    cleared = cases_module.update_case(updated, "fix", threshold="")
+    assert "threshold" not in cleared[0]
+
+
+def test_best_match_uses_per_case_threshold_over_global_default(monkeypatch, tmp_path):
+    _setup_paths(monkeypatch, tmp_path)
+    monkeypatch.delenv("SHSS_CASES_THRESHOLD", raising=False)
+
+    class FixedEmbedder:
+        model_path = "fake.gguf"
+
+        def embed(self, text):
+            # cosinus([1,0], [0.8,0.6]) = 0.8 exactement : au-dessus du
+            # seuil global (0.70) par defaut, en dessous d'un seuil de
+            # 0.9 propre au cas.
+            return {"cas": [1.0, 0.0], "requete": [0.8, 0.6]}[text]
+
+    embedder = FixedEmbedder()
+
+    with_threshold = [{"id": "fix", "requests": ["cas"], "script": "x", "threshold": 0.9}]
+    cache = cases_module.reindex(with_threshold, embedder=embedder)
+    assert (
+        cases_module.best_match("requete", cases=with_threshold, cache=cache, embedder=embedder)
+        is None
+    )
+
+    without_threshold = [{"id": "fix", "requests": ["cas"], "script": "x"}]
+    cache2 = cases_module.reindex(without_threshold, embedder=embedder)
+    match = cases_module.best_match(
+        "requete", cases=without_threshold, cache=cache2, embedder=embedder
+    )
+    assert match is not None  # meme score, mais le seuil global (0.70) suffit
+
+
 def test_add_case_with_input_mode_stdin_sets_input_field():
     cases = cases_module.add_case([], "fix", ["x"], "echo x", input_mode="stdin")
     assert cases[0]["input"] == "stdin"

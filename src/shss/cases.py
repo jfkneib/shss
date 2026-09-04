@@ -175,7 +175,7 @@ def _find_case(cases, case_id):
     return None
 
 
-def add_case(cases, case_id, requests, script, note="", input_mode=None):
+def add_case(cases, case_id, requests, script, note="", input_mode=None, threshold=None):
     """Retourne une nouvelle liste avec `case_id` ajoute. Leve
     ValueError si l'id existe deja -- on modifie/retire explicitement
     un cas curate, on ne l'ecrase jamais silencieusement.
@@ -184,7 +184,16 @@ def add_case(cases, case_id, requests, script, note="", input_mode=None):
     contenu entre guillemets de la demande (voir extract_payload()) est
     transmis au script sur son entree standard au lieu d'etre ignore --
     un cas "gabarit", pour une demande dont le contenu varie a chaque
-    fois autour d'une formulation stable."""
+    fois autour d'une formulation stable.
+
+    `threshold` : seuil de confiance propre a ce cas, prioritaire sur
+    DEFAULT_THRESHOLD/SHSS_CASES_THRESHOLD. Un cas gabarit a souvent
+    besoin d'un seuil plus eleve que la moyenne : une fois le contenu
+    entre guillemets normalise (voir extract_payload), il ne reste
+    souvent que le gabarit de phrase ("corrige ... : \"...\"") pour
+    distinguer un cas d'un autre -- constate en pratique, plusieurs
+    demandes sans rapport (traduire, compter des mots...) peuvent
+    quand meme depasser un seuil generique."""
     if _find_case(cases, case_id) is not None:
         raise ValueError(f"un cas « {case_id} » existe deja")
     if not requests:
@@ -196,6 +205,8 @@ def add_case(cases, case_id, requests, script, note="", input_mode=None):
         case["note"] = note
     if input_mode:
         case["input"] = input_mode
+    if threshold is not None:
+        case["threshold"] = float(threshold)
     return cases + [case]
 
 
@@ -207,7 +218,7 @@ def remove_case(cases, case_id):
     return [c for c in cases if c["id"] != case_id]
 
 
-def update_case(cases, case_id, requests=None, script=None, note=None, input_mode=None):
+def update_case(cases, case_id, requests=None, script=None, note=None, input_mode=None, threshold=None):
     """Retourne une nouvelle liste avec `case_id` mis a jour en place
     (position preservee dans la liste) -- seuls les champs fournis
     (non None) sont remplaces, les autres restent tels quels. Leve
@@ -216,7 +227,10 @@ def update_case(cases, case_id, requests=None, script=None, note=None, input_mod
 
     `input_mode` : passer "stdin" ou "" (chaine vide, pour repasser un
     cas gabarit en cas normal -- None laisse le champ "input" tel quel,
-    comme les autres champs)."""
+    comme les autres champs).
+
+    `threshold` : un float pour fixer le seuil propre a ce cas, "" pour
+    le retirer (retour au seuil global), None pour laisser tel quel."""
     if _find_case(cases, case_id) is None:
         raise KeyError(case_id)
     if input_mode not in (None, "", "stdin"):
@@ -237,6 +251,11 @@ def update_case(cases, case_id, requests=None, script=None, note=None, input_mod
                 new_case["input"] = input_mode
             else:
                 new_case.pop("input", None)
+        if threshold is not None:
+            if threshold == "":
+                new_case.pop("threshold", None)
+            else:
+                new_case["threshold"] = float(threshold)
         return new_case
 
     return [_updated(c) for c in cases]
@@ -450,6 +469,15 @@ def best_match(query, cases=None, cache=None, embedder=None, threshold=None):
     sinon None -- pertinent seulement pour un cas "gabarit"
     (case["input"] == "stdin"), ignore sinon.
 
+    Seuil applique, par ordre de priorite : `threshold` (argument),
+    puis case["threshold"] s'il existe, puis DEFAULT_THRESHOLD /
+    SHSS_CASES_THRESHOLD. Un cas gabarit a souvent besoin d'un seuil
+    plus eleve que la moyenne (voir add_case()) -- sans ca, plusieurs
+    demandes sans rapport constatees en pratique (traduire un texte,
+    compter des mots...) peuvent quand meme depasser un seuil generique,
+    le gabarit de phrase pesant plus que le contenu une fois celui-ci
+    normalise.
+
     Ne charge aucun modele si la base est vide : find_matches() sort
     avant d'instancier un Embedder des que `cases` ou `cache` est vide
     -- c'est ce qui garde une demande ordinaire, sans cas curate en
@@ -458,7 +486,12 @@ def best_match(query, cases=None, cache=None, embedder=None, threshold=None):
     if not matches:
         return None
     case, score, _matched_request = matches[0]
-    seuil = threshold if threshold is not None else _threshold()
+    if threshold is not None:
+        seuil = threshold
+    elif "threshold" in case:
+        seuil = case["threshold"]
+    else:
+        seuil = _threshold()
     if score >= seuil:
         payload, _normalized = extract_payload(query)
         return case, score, payload

@@ -80,6 +80,26 @@ def test_cmd_edit_no_stdin_clears_input_mode(monkeypatch, tmp_path):
     assert "input" not in cases_module.load_cases()[0]
 
 
+def test_cmd_add_threshold_flag_sets_field(monkeypatch, tmp_path):
+    _setup_paths(monkeypatch, tmp_path)
+    args = cli_module.build_parser().parse_args(
+        ["add", "fix", "--request", "x", "--threshold", "0.85"]
+    )
+    monkeypatch.setattr(sys, "stdin", io.StringIO("#!/usr/bin/env bash\n"))
+
+    assert cli_module._cmd_add(args) == 0
+    assert cases_module.load_cases()[0]["threshold"] == 0.85
+
+
+def test_cmd_edit_clear_threshold_removes_field(monkeypatch, tmp_path):
+    _setup_paths(monkeypatch, tmp_path)
+    cases_module.save_cases([{"id": "fix", "requests": ["x"], "script": "echo x", "threshold": 0.9}])
+
+    args = cli_module.build_parser().parse_args(["edit", "fix", "--clear-threshold"])
+    assert cli_module._cmd_edit(args) == 0
+    assert "threshold" not in cases_module.load_cases()[0]
+
+
 def test_cmd_gui_returns_0_when_it_opens(monkeypatch):
     monkeypatch.setattr(gui_module, "try_run", lambda: True)
     args = cli_module.build_parser().parse_args(["gui"])
