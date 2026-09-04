@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+#
+# pc-docker-info -- conteneurs (etat, CPU/RAM pour ceux actifs),
+# images, volumes, reseaux.
+
+set -u
+export LC_NUMERIC=C
+
+if ! command -v docker >/dev/null 2>&1; then
+    echo "pc-docker-info: docker n'est pas installe." >&2
+    exit 1
+fi
+
+if ! docker info >/dev/null 2>&1; then
+    echo "pc-docker-info: le demon Docker ne repond pas (pas lance, ou pas les droits -- groupe 'docker' ?)." >&2
+    exit 1
+fi
+
+label()
+{
+    local text="$1"
+    local width="$2"
+    local n=$(( width - ${#text} ))
+    (( n < 0 )) && n=0
+    printf '%s%*s: ' "$text" "$n" ""
+}
+
+main()
+{
+    echo "############################################################"
+    echo "                        DOCKER"
+    echo "Machine : $(hostname)"
+    echo "############################################################"
+    echo
+
+    local containers running_n total_n images_n volumes_n networks_n
+    containers=$(docker ps -a --format '{{.ID}}|{{.Image}}|{{.Names}}|{{.Status}}|{{.State}}' 2>/dev/null)
+    total_n=0
+    running_n=0
+    [[ -n "$containers" ]] && total_n=$(wc -l <<<"$containers")
+    [[ -n "$containers" ]] && running_n=$(awk -F'|' '$5=="running"' <<<"$containers" | wc -l)
+    images_n=$(docker images -q 2>/dev/null | wc -l)
+    volumes_n=$(docker volume ls -q 2>/dev/null | wc -l)
+    networks_n=$(docker network ls -q 2>/dev/null | wc -l)
+
+    echo "Résumé"
+    echo "------------------------------------------------------------"
+    echo "$(label "Conteneurs" 14)$running_n actif(s) / $total_n au total"
+    echo "$(label "Images" 14)$images_n"
+    echo "$(label "Volumes" 14)$volumes_n"
+    echo "$(label "Réseaux" 14)$networks_n"
+    echo
+
+    if [[ -n "$containers" ]]; then
+        # CPU/RAM seulement pour les conteneurs actifs (docker stats
+        # n'en dit rien pour un conteneur arrete -- normal, rien a
+        # mesurer).
+        local stats
+        stats=$(docker stats --no-stream --format '{{.Name}}|{{.CPUPerc}}|{{.MemUsage}}' 2>/dev/null)
+
+        echo "Conteneurs :"
+        echo "------------------------------------------------------------"
+        while IFS='|' read -r id image name status state; do
+            local cpu mem
+            cpu="-"
+            mem="-"
+            if [[ "$state" == "running" ]]; then
+                local line
+                line=$(awk -F'|' -v n="$name" '$1==n {print; exit}' <<<"$stats")
+                if [[ -n "$line" ]]; then
+                    cpu=$(cut -d'|' -f2 <<<"$line")
+                    mem=$(cut -d'|' -f3 <<<"$line")
+                fi
+            fi
+            printf "  %-20s %-40s %-8s CPU %-8s RAM %s\n" "$name" "$image" "$state" "$cpu" "$mem"
+            echo "      $status"
+        done <<<"$containers"
+        echo
+    fi
+
+    local images
+    images=$(docker images --format '{{.Repository}}:{{.Tag}}|{{.Size}}|{{.CreatedSince}}' 2>/dev/null)
+    if [[ -n "$images" ]]; then
+        echo "Images :"
+        echo "------------------------------------------------------------"
+        while IFS='|' read -r name size created; do
+            printf "  %-45s %10s   %s\n" "$name" "$size" "$created"
+        done <<<"$images"
+        echo
+    fi
+
+    local volumes
+    volumes=$(docker volume ls --format '{{.Name}}|{{.Driver}}' 2>/dev/null)
+    if [[ -n "$volumes" ]]; then
+        echo "Volumes :"
+        echo "------------------------------------------------------------"
+        while IFS='|' read -r name driver; do
+            printf "  %-40s %s\n" "$name" "$driver"
+        done <<<"$volumes"
+        echo
+    fi
+
+    local networks
+    networks=$(docker network ls --format '{{.Name}}|{{.Driver}}' 2>/dev/null)
+    if [[ -n "$networks" ]]; then
+        echo "Réseaux :"
+        echo "------------------------------------------------------------"
+        while IFS='|' read -r name driver; do
+            printf "  %-25s %s\n" "$name" "$driver"
+        done <<<"$networks"
+    fi
+}
+
+main "$@"
