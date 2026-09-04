@@ -41,6 +41,21 @@ KWH_PRICE="${KWH_PRICE:-0.25}"
 # travail, par exemple.
 HOURS_PER_DAY="${HOURS_PER_DAY:-24}"
 
+# Ce que rien ci-dessous ne mesure ni n'estime au cas par cas :
+# chipset de la carte mere, VRM, ventilateurs, reseau integre,
+# controleurs divers. Forfait volontairement rond plutot qu'une fausse
+# precision poste par poste, impossible a distinguer sans materiel
+# dedie.
+MOBO_MISC_POWER="${MOBO_MISC_POWER:-20}"
+
+# Rendement de l'alimentation (conversion secteur AC -> DC interne) :
+# jamais 100%, la perte est proportionnelle a ce que les composants
+# consomment reellement, pas un watt fixe. 0.85 = hypothese "80+
+# Bronze/Silver" a mi-charge, plausible sans etre optimiste -- une
+# alim 80+ Titanium ferait mieux (~0.92-0.94), une alim bas de gamme ou
+# a faible charge ferait pire (jusqu'a ~0.70).
+PSU_EFFICIENCY="${PSU_EFFICIENCY:-0.85}"
+
 ###############################################################################
 # Couleurs
 ###############################################################################
@@ -488,8 +503,11 @@ detect_usb()
 # Total
 ###############################################################################
 
-calculate_total()
+calculate_subtotal_dc()
 {
+    # Ce que les composants consomment reellement en interne (cote DC,
+    # apres l'alimentation), plus le forfait carte mere/divers -- avant
+    # la perte de conversion de l'alimentation elle-meme.
     awk \
         -v cpu="$CPU_POWER" \
         -v ram="$RAM_POWER" \
@@ -497,10 +515,21 @@ calculate_total()
         -v disk="$DISK_POWER" \
         -v screen="$SCREEN_POWER" \
         -v usb="$USB_POWER" \
+        -v mobo="$MOBO_MISC_POWER" \
         'BEGIN {
-            total=cpu+ram+gpu+disk+screen+usb
-            printf "%.2f\n", total
+            printf "%.2f\n", cpu+ram+gpu+disk+screen+usb+mobo
         }'
+}
+
+calculate_psu_loss()
+{
+    # Perte proportionnelle au sous-total DC, pas un watt fixe : une
+    # alim qui alimente peu de composants perd peu, une alim qui en
+    # alimente beaucoup perd plus, a rendement egal.
+    local subtotal_dc="$1"
+
+    awk -v s="$subtotal_dc" -v e="$PSU_EFFICIENCY" \
+        'BEGIN { printf "%.2f\n", s * (1 / e - 1) }'
 }
 
 ###############################################################################
@@ -597,8 +626,10 @@ main()
     detect_screens
     detect_usb
 
-    local total
-    total=$(calculate_total)
+    local subtotal_dc psu_loss total
+    subtotal_dc=$(calculate_subtotal_dc)
+    psu_loss=$(calculate_psu_loss "$subtotal_dc")
+    total=$(awk -v s="$subtotal_dc" -v l="$psu_loss" 'BEGIN {printf "%.2f", s + l}')
 
     echo "${BOLD}Consommation estimée${RESET}"
     echo
@@ -619,6 +650,8 @@ main()
         print_detail "  $item"
     done
     print_line "USB"    "$USB_POWER"    "$USB_METHOD"    "$USB_DETAILS"
+    print_line "Carte mère" "$MOBO_MISC_POWER" "estimé" "forfait (VRM, ventilateurs, réseau...)"
+    print_line "Alim (perte)" "$psu_loss" "estimé" "rendement ${PSU_EFFICIENCY} (PSU_EFFICIENCY, réglable)"
 
     echo "├──────────────┼────────────┼────────────────┼────────────────────────────────────────────┤"
     printf "│ ${BOLD}TOTAL${RESET}        │ ${BOLD}%8.2f W${RESET} │                │ estimation logicielle                      │\n" "$total"
@@ -656,10 +689,9 @@ main()
     echo "  CPU/GPU/RAPL = mesures matérielles lorsque disponibles."
     echo "  RAM/disques/écrans/USB = estimations lorsque Linux ne fournit pas"
     echo "  directement leur consommation."
-    echo
-    echo "  La consommation à la prise est supérieure au total ci-dessus"
-    echo "  à cause de la carte mère, ventilateurs, pertes de l'alimentation,"
-    echo "  convertisseurs, périphériques, etc."
+    echo "  Carte mère/ventilateurs/réseau = forfait, alimentation = perte"
+    echo "  calculée à partir d'un rendement supposé -- ni l'un ni l'autre"
+    echo "  n'est mesuré sur cette machine précise."
     echo
     echo "  Pour connaître la vraie consommation du PC : wattmètre à la prise."
     echo "${RESET}"
