@@ -50,7 +50,7 @@ export SHSS_CASES_PROFILE=pc-stats     # ou #@pc-stats@ ... @# en ligne
 
 ## État actuel
 
-11 cas curatés dans le profil `pc-stats`, chacun avec son script sous
+12 cas curatés dans le profil `pc-stats`, chacun avec son script sous
 `linux/bin/` : la colonne « Script » ci-dessous, c'est où *lire et
 modifier* chaque outil.
 
@@ -101,6 +101,7 @@ changement — aucun cas n'a besoin d'être réédité pour ça, contrairement
 | `paquets`        | `pc-pkg-info`      | Mises à jour dispo, paquets cassés, orphelins |
 | `docker`         | `pc-docker-info`   | Conteneurs/images/volumes/réseaux Docker |
 | `virtualisation` | `pc-vm-info`       | VM KVM/libvirt : résumé + détail des VM en cours |
+| `batterie`       | `pc-battery-info`  | Niveau, état de charge, autonomie estimée, sur secteur ou non — sonde `/sys/class/power_supply/*` au runtime, ne code jamais un chemin `BATx` en dur. **Non vérifié sur du vrai matériel portable** (écrit sur un desktop sans batterie ; la branche "batterie présente" n'a été testée que contre un faux sysfs) |
 | `sante`          | `pc-report`        | Agrégateur : croise tout ce qui précède et signale ce qui mérite un œil (disque plein, service en échec, charge, RAM, conteneur planté) |
 
 Plus, autonomes (pas de cas dédié — support pour `energie`) :

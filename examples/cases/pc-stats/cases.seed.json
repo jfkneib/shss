@@ -131,5 +131,18 @@
     ],
     "script": "#!/usr/bin/env bash\n#\n# Cas curate \"sante\" -- appelle le script correspondant range dans le\n# profil (voir SHSS_PROFILE_DIR, docs/shss-cases.md) plutot que d'en\n# embarquer une copie : $SHSS_PROFILE_DIR/scripts/ est garanti\n# present partout ou le profil a ete installe, contrairement a un\n# chemin vers un clone git precis. Sous linux/ : les scripts sont\n# specifiques a l'OS (/sys, systemctl, apt...) -- un futur windows/\n# (ou autre) vivrait a cote, ce script choisirait alors le bon.\n\nexec \"$SHSS_PROFILE_DIR/scripts/linux/bin/pc-report\"\n",
     "note": "vue d'ensemble : croise disques/charge/RAM/services/paquets/docker/VM pour signaler ce qui merite un oeil ; pas un remplacement des pc-* individuels, juste le coup d'oeil du matin. Aucun seuil sur la temperature (pas de valeur critique fiable trouvee sur cette machine)."
+  },
+  {
+    "id": "batterie",
+    "requests": [
+      "niveau de batterie du pc",
+      "combien de batterie il reste",
+      "le pc est il sur secteur ou sur batterie",
+      "etat de la batterie",
+      "autonomie restante de la batterie",
+      "le pc est il en charge"
+    ],
+    "script": "#!/usr/bin/env bash\n#\n# Cas curate \"batterie\" -- appelle le script correspondant range dans le\n# profil (voir SHSS_PROFILE_DIR, docs/shss-cases.md) plutot que d'en\n# embarquer une copie : $SHSS_PROFILE_DIR/scripts/ est garanti\n# present partout ou le profil a ete installe, contrairement a un\n# chemin vers un clone git precis. Sous linux/ : les scripts sont\n# specifiques a l'OS (/sys, systemctl, apt...) -- un futur windows/\n# (ou autre) vivrait a cote, ce script choisirait alors le bon.\n\nexec \"$SHSS_PROFILE_DIR/scripts/linux/bin/pc-battery-info\"\n",
+    "note": "sonde /sys/class/power_supply/*  au runtime (jamais de chemin BATx code en dur -- variable selon le materiel). Branche 'aucune batterie' teste reellement sur ce desktop ; branche 'batterie presente' verifiee via un faux sysfs, jamais sur du vrai materiel portable -- a confirmer par Noel/utilisateur avant de la considerer fiable a 100%."
   }
 ]
