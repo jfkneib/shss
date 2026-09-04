@@ -13,10 +13,10 @@ mécanisme général — profils, cas gabarit, variables d'environnement).
 ## Récupérer la base opérationnelle après un `git pull`
 
 **Important à savoir** : `git pull` seul ne suffit pas. Les scripts
-(`bin/pc-*`, `lib/`) sont versionnés, mais la base de cas qui les rend
-réellement utilisables (`~/.shss/profiles/pc-stats/`) vit **hors du
-dépôt**, dans ton `$HOME` — jamais écrasée par un pull, pour ne pas
-effacer des cas que tu aurais ajoutés toi-même.
+(`linux/bin/pc-*`, `linux/lib/`) sont versionnés, mais la base de cas
+qui les rend réellement utilisables (`~/.shss/profiles/pc-stats/`) vit
+**hors du dépôt**, dans ton `$HOME` — jamais écrasée par un pull, pour
+ne pas effacer des cas que tu aurais ajoutés toi-même.
 
 `cases.seed.json`, à côté de ce README, est un instantané de la base
 curatée (les demandes-exemples + de petits scripts d'appel, texte pur,
@@ -26,8 +26,7 @@ mettre à jour après un pull) :
 ```bash
 mkdir -p ~/.shss/profiles/pc-stats/scripts
 cp examples/cases/pc-stats/cases.seed.json ~/.shss/profiles/pc-stats/cases.json
-cp -r examples/cases/pc-stats/bin ~/.shss/profiles/pc-stats/scripts/bin
-cp -r examples/cases/pc-stats/lib ~/.shss/profiles/pc-stats/scripts/lib
+cp -r examples/cases/pc-stats/linux ~/.shss/profiles/pc-stats/scripts/linux
 ./bin/shss-cases --profile pc-stats reindex
 ```
 
@@ -39,7 +38,7 @@ généré) — toujours régénéré localement.
 
 Si tu as déjà des cas à toi dans ce profil, les `cp` ci-dessus les
 écraseraient : fusionne à la main (`shss-cases list` sur les deux
-fichiers, et compare les deux `scripts/`) plutôt que de copier
+fichiers, et compare les deux `scripts/linux/`) plutôt que de copier
 aveuglément.
 
 Ensuite, pour t'en servir tel quel dans une ligne bash :
@@ -52,31 +51,43 @@ export SHSS_CASES_PROFILE=pc-stats     # ou #@pc-stats@ ... @# en ligne
 ## État actuel
 
 11 cas curatés dans le profil `pc-stats`, chacun avec son script sous
-`bin/` : la colonne « Script » ci-dessous, c'est où *lire et modifier*
-chaque outil.
+`linux/bin/` : la colonne « Script » ci-dessous, c'est où *lire et
+modifier* chaque outil.
 
-**Architecture** : chaque cas est un petit script d'appel (quelques
-lignes) qui exécute le vrai outil via `$SHSS_PROFILE_DIR/scripts/bin/
-<nom>` — une variable d'environnement que shss fournit à tout cas qui
-matche (voir `docs/shss-cases.md`), pointant vers le répertoire du
-profil actif sur la machine courante (`~/.shss/profiles/pc-stats/`
-ici). Jamais un chemin codé en dur vers ce dépôt : `SHSS_PROFILE_DIR`
-reste valide partout où le profil a été installé, contrairement à un
-chemin vers un clone git précis. `uptime` illustre bien la logique :
-son cas extrait juste le mois demandé (`SHSS_REQUEST` ou stdin), puis
-appelle `$SHSS_PROFILE_DIR/scripts/bin/pc-uptime` qui, lui, source
-`lib/pc-stats-common.sh` à côté de lui — d'où l'étape `cp -r .../lib`
-ci-dessus, indispensable pour ce cas précis.
+**Répertoire par OS** : `bin/`, `lib/` et `systemd/` sont rangés sous
+`linux/` — pas juste pour ranger, ces outils dépendent tous de Linux
+(`/sys`, `systemctl`, `journalctl`, `apt`, `virsh`...), rien de portable
+vers un autre OS. Le jour où un `pc-power` Windows/macOS aurait un
+sens, il vivrait dans un `windows/`/`macos/` à côté, avec sa propre
+implémentation — sans rien bouger dans `linux/` ni dans la logique des
+cas eux-mêmes. `data/` (juste des lignes CSV, pas du code) reste au
+niveau du profil : le format de `power.csv` n'a pas de raison de
+dépendre de l'OS qui l'a produit.
+
+**Architecture des cas** : chaque cas est un petit script d'appel
+(quelques lignes) qui exécute le vrai outil via
+`$SHSS_PROFILE_DIR/scripts/linux/bin/<nom>` — une variable
+d'environnement que shss fournit à tout cas qui matche (voir
+`docs/shss-cases.md`), pointant vers le répertoire du profil actif sur
+la machine courante (`~/.shss/profiles/pc-stats/` ici). Jamais un
+chemin codé en dur vers ce dépôt : `SHSS_PROFILE_DIR` reste valide
+partout où le profil a été installé, contrairement à un chemin vers un
+clone git précis. `uptime` illustre bien la logique : son cas extrait
+juste le mois demandé (`SHSS_REQUEST` ou stdin), puis appelle
+`$SHSS_PROFILE_DIR/scripts/linux/bin/pc-uptime` qui, lui, source
+`lib/pc-stats-common.sh` à côté de lui — d'où l'étape `cp -r
+examples/cases/pc-stats/linux` ci-dessus, qui embarque `bin/` et
+`lib/` ensemble.
 
 Deux cas (`disques`, `uptime`) avaient d'abord été ajoutés avec un
 chemin codé en dur vers ce dépôt (`/home/jfk/git/dev/shss/...`) —
 fonctionnait par hasard tant que tout était lancé depuis cette
 machine avec ce clone à cet endroit, cassait sinon. `SHSS_PROFILE_DIR`
-corrige ça pour de bon : après modification d'un script sous `bin/`
-ou `lib/`, une simple recopie (`cp -r` comme ci-dessus, ou juste le
-fichier modifié) suffit à répercuter le changement — aucun cas n'a
-besoin d'être réédité pour ça, contrairement à l'ancien schéma où
-chaque cas embarquait sa propre copie du script.
+corrige ça pour de bon : après modification d'un script sous
+`linux/bin/` ou `linux/lib/`, une simple recopie (`cp -r` comme
+ci-dessus, ou juste le fichier modifié) suffit à répercuter le
+changement — aucun cas n'a besoin d'être réédité pour ça, contrairement
+à l'ancien schéma où chaque cas embarquait sa propre copie du script.
 
 | Cas              | Script             | Ce qu'il montre |
 |------------------|--------------------|--------|
@@ -94,11 +105,12 @@ chaque cas embarquait sa propre copie du script.
 
 Plus, autonomes (pas de cas dédié — support pour `energie`) :
 
-- **`bin/pc-power-log`** — ajoute une ligne à `data/power.csv`. Rien ne
-  l'appelle automatiquement ; lance-le à la main, ou installe le
-  minuteur (voir plus bas) si tu veux un historique régulier.
-- **`lib/pc-stats-common.sh`** — logique partagée entre les outils.
-- **`systemd/pc-power-log.{service,timer}`** — fichiers d'unité
+- **`linux/bin/pc-power-log`** — ajoute une ligne à `data/power.csv`.
+  Rien ne l'appelle automatiquement ; lance-le à la main, ou installe
+  le minuteur (voir plus bas) si tu veux un historique régulier.
+- **`linux/lib/pc-stats-common.sh`** — logique partagée entre les
+  outils.
+- **`linux/systemd/pc-power-log.{service,timer}`** — fichiers d'unité
   fournis en référence, **pas installés par défaut**. Testés une fois
   en mode utilisateur sur cette machine (4 septembre 2026), puis
   désinstallés délibérément — voir plus bas.
@@ -118,7 +130,7 @@ Volontairement **pas** activé par défaut. Pour l'installer toi-même :
 
 ```bash
 mkdir -p ~/.config/systemd/user
-cp systemd/pc-power-log.{service,timer} ~/.config/systemd/user/
+cp linux/systemd/pc-power-log.{service,timer} ~/.config/systemd/user/
 systemctl --user daemon-reload
 systemctl --user enable --now pc-power-log.timer
 ```

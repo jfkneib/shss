@@ -138,8 +138,11 @@ cas (par convention, sous `scripts/` dans ce répertoire) sans jamais
 coder de chemin en dur vers un clone git précis — ce répertoire, lui,
 est garanti présent partout où le profil a été installé (voir
 `examples/cases/pc-stats/` pour l'exemple concret : les scripts de
-`bin/` sont distribués avec la base de cas, et un cas s'y réfère via
-`"$SHSS_PROFILE_DIR/scripts/bin/..."`, jamais un chemin vers le dépôt).
+`linux/bin/` — sous `linux/` puisque ce sont des outils Linux, pas
+portables tels quels vers un autre OS — sont distribués avec la base
+de cas, et un cas s'y réfère via
+`"$SHSS_PROFILE_DIR/scripts/linux/bin/..."`, jamais un chemin vers le
+dépôt).
 
 Toujours de vraies variables d'environnement, jamais collées dans le
 code du script : contrairement à une substitution textuelle
