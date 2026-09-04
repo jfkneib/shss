@@ -163,6 +163,21 @@ def _cases_path() -> Path:
     return Path.home() / ".shss" / "cases.json"
 
 
+def profile_dir(cases_path: Path = None) -> Path:
+    """Repertoire du profil courant (~/.shss/profiles/<nom>/, ou
+    ~/.shss/ pour le profil par defaut) -- expose aux cas curatés via
+    SHSS_PROFILE_DIR (voir llm.py) pour qu'un cas puisse appeler un
+    script range dans ce meme repertoire (sous scripts/, par
+    convention) sans jamais coder un chemin en dur : contrairement a
+    un chemin vers l'emplacement d'un clone git, ce repertoire est
+    garanti present partout ou le profil a ete installe, quelle que
+    soit la machine (voir examples/cases/pc-stats/README.md pour le
+    cas concret qui a motive ceci -- deux cas y avaient ete ajoutes
+    avec un chemin code en dur vers ce depot, cassant des que lance
+    d'ailleurs)."""
+    return (cases_path or _cases_path()).parent
+
+
 def list_profiles():
     """Liste triee des profils connus (sous-dossiers de
     ~/.shss/profiles/ contenant un cases.json) -- le profil par defaut

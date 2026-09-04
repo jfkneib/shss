@@ -501,6 +501,8 @@ class MiniLLM:
             script_path = _write_script(case["script"])
             import shlex
 
+            from .cases import profile_dir
+
             # Contexte toujours disponible pour un cas qui matche, par
             # convention, via des variables d'environnement -- jamais
             # collees dans le code du script (pas de risque d'injection,
@@ -512,12 +514,21 @@ class MiniLLM:
             #   SHSS_SUFFIX      le bash apres la balise sur la ligne
             #   SHSS_MATCH_SCORE score de similarite qui a fait matcher ce cas
             #   SHSS_CASE_ID     l'identifiant du cas
+            #   SHSS_PROFILE_DIR repertoire du profil courant (~/.shss/ ou
+            #                    ~/.shss/profiles/<nom>/) -- permet a un cas
+            #                    d'appeler un script range a cote (sous
+            #                    scripts/, par convention) sans coder de
+            #                    chemin en dur vers un clone git precis :
+            #                    ce repertoire, lui, est garanti present
+            #                    partout ou le profil a ete installe. Voir
+            #                    examples/cases/pc-stats/README.md.
             env_vars = {
                 "SHSS_REQUEST": request,
                 "SHSS_PREFIX": prefix,
                 "SHSS_SUFFIX": suffix,
                 "SHSS_MATCH_SCORE": f"{score:.4f}",
                 "SHSS_CASE_ID": case["id"],
+                "SHSS_PROFILE_DIR": str(profile_dir()),
             }
             env_prefix = "".join(f"{name}={shlex.quote(value)} " for name, value in env_vars.items())
             if stdin_mode:

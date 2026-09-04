@@ -131,6 +131,15 @@ pas), en bash (`"$SHSS_REQUEST"`) comme en python
 | `SHSS_SUFFIX` | le bash après la balise sur la même ligne |
 | `SHSS_MATCH_SCORE` | le score de similarité qui a fait matcher ce cas (ex : `0.8412`) |
 | `SHSS_CASE_ID` | l'identifiant du cas |
+| `SHSS_PROFILE_DIR` | répertoire du profil courant (`~/.shss/` ou `~/.shss/profiles/<nom>/`) |
+
+`SHSS_PROFILE_DIR` sert à appeler un script rangé à côté de la base de
+cas (par convention, sous `scripts/` dans ce répertoire) sans jamais
+coder de chemin en dur vers un clone git précis — ce répertoire, lui,
+est garanti présent partout où le profil a été installé (voir
+`examples/cases/pc-stats/` pour l'exemple concret : les scripts de
+`bin/` sont distribués avec la base de cas, et un cas s'y réfère via
+`"$SHSS_PROFILE_DIR/scripts/bin/..."`, jamais un chemin vers le dépôt).
 
 Toujours de vraies variables d'environnement, jamais collées dans le
 code du script : contrairement à une substitution textuelle
