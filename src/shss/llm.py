@@ -100,6 +100,25 @@ _SHEBANG_EXTENSIONS = [
     ("node", ".js"),
 ]
 
+# Exemples choisis pour enseigner un PATTERN generalisable (extension,
+# colonne, seuil... varient a chaque exemple), jamais une reponse figee a
+# un cas precis -- ex: "les 10 fichiers jpg les plus lourds" doit aussi
+# marcher pour "les 5 fichiers png les plus lourds" ou "les fichiers de
+# plus de 100 Mo dans /var/log", pas seulement jpg.
+#
+# Verifie en pratique (pas suppose) sur qwen2.5-coder:1.5b-base : deux
+# exemples a la formulation trop proche (ex: "liste tous les fichiers X
+# du dossier courant" et "liste les N fichiers les plus lourds du
+# dossier courant") se melangent l'un dans l'autre au lieu de rester
+# distincts -- la reponse generee empruntait un bout de chaque exemple
+# plutot que de suivre fidelement le bon. Resolu en fusionnant les deux
+# intentions proches (extension + taille) en un seul exemple plutot que
+# deux voisins qui se parasitent -- pas juste les eloigner dans le
+# prompt, insuffisant a lui seul (teste aussi). Limite connue malgre
+# cette fusion : une demande de taille SANS extension mentionnee (ex.
+# "les plus gros fichiers de plus de 100 Mo dans /var/log", sans dire
+# quel type de fichier) generalise moins bien que lorsque l'extension
+# est presente.
 FEW_SHOT = """Tu réponds à une demande soit par un fragment bash à insérer dans une
 ligne existante (le symbole █ marque l'endroit à remplir), soit par un
 script complet si la tâche demande plusieurs étapes (fichiers,
@@ -118,6 +137,26 @@ plutôt que de deviner.
 Ligne: █
 Demande: liste tous les fichiers pdf du dossier courant
 Réponse: find . -iname "*.pdf"
+
+Ligne: █
+Demande: additionne la colonne 3 d'un fichier csv, groupee par la colonne 1
+Réponse: awk -F, '{{s[$1]+=$3}} END {{for (k in s) print k, s[k]}}' data.csv
+
+Ligne: █
+Demande: quelles adresses ip apparaissent le plus souvent dans access.log
+Réponse: grep -oE '[0-9]{{1,3}}(\\.[0-9]{{1,3}}){{3}}' access.log | sort | uniq -c | sort -rn | head
+
+Ligne: █
+Demande: quels sont les 5 processus qui consomment le plus de memoire
+Réponse: ps aux --sort=-%mem | head -6
+
+Ligne: █
+Demande: remplace TODO par FIXME dans tous les fichiers txt qui en contiennent
+Réponse: grep -rl "TODO" --include="*.txt" . | xargs sed -i 's/TODO/FIXME/g'
+
+Ligne: █
+Demande: liste les 10 fichiers jpg les plus lourds du dossier courant
+Réponse: find . -iname "*.jpg" -type f -exec du -h {{}} + | sort -rh | head -10
 
 Ligne: ls █
 Demande: affiche aussi les fichiers caches

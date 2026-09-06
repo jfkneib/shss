@@ -107,7 +107,7 @@ podman uses `--device nvidia.com/gpu=all` instead of `--gpus all`;
 | Variable | Effect |
 | --- | --- |
 | `SHSS_N_THREADS` | number of inference threads — set to the number of **physical** cores (llama.cpp often guesses badly in a container); `run.sh` uses `nproc` |
-| `SHSS_N_CTX` | context window (default 2048) — `1024` is plenty for the few-shot prompt + a file preview, and cuts RAM and prompt-eval time |
+| `SHSS_N_CTX` | context window (default 2048) — the few-shot prompt alone measures ~840 tokens (grew from ~560 after adding more generic examples, see "Known limitations"); `1024` still worked in practice on the cases tested (one-liner and script-mode alike, file preview included) but leaves much less headroom than before for a long file preview or a verbose response — worth re-testing your own workload if you override it down |
 | `SHSS_N_GPU_LAYERS` | `auto` (default): offload everything if `nvidia-smi` is present, nothing otherwise. An integer forces the value. No effect on a llama.cpp binary built without CUDA (so the `cpu` image ignores the variable). |
 | `SHSS_MODEL_TAG` | `0.5b`, `1.5b-base` (default), `3b`, `7b` — the GPU adds almost nothing below 1.5b, but becomes useful at 7b |
 
@@ -452,6 +452,23 @@ latency.
 The mechanism itself (tag detection, in-place injection, execution) works
 correctly in every tested case — it is the generation quality that varies
 with request complexity.
+
+Five more few-shot examples were added later, covering generic admin/text
+one-liner patterns absent before (biggest files by size, CSV column
+aggregation, most-frequent-value-in-a-log, top-N processes by resource,
+find-and-replace across matching files) — chosen to teach a
+**generalizable pattern**, not a fixed answer: an extension, a column
+number, or a resource name in the example should transfer to a different
+one in the actual request (verified: a column-aggregation example on
+columns 3/1 correctly generalized to columns 4/2 in a real request; a
+`%mem`-sort example generalized to `%cpu`). One interference case found
+in the process: an existing example ("list all pdf files") and a new one
+("list the biggest files by size") were similar enough in phrasing that
+the model blended both instead of picking one — moving them apart in the
+prompt did not fix it (tested), only merging the two intents into a
+single example (extension **and** size together) did. Remaining known
+gap: a size-threshold request that names no file extension at all
+generalizes less reliably than one that does.
 
 Another pitfall observed and fixed: without a repetition penalty,
 `llama-cpp-python` can make the model loop on a degenerate pattern until
