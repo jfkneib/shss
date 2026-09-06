@@ -217,3 +217,65 @@ def test_feedback_bon_without_comment(monkeypatch, tmp_path):
 
     assert "bon" in out
     assert "trie par taille" in out
+
+
+def test_q_without_query_gives_usage_hint():
+    out = try_builtin("q", _FakeMiniLLM())
+    assert "precise une question" in out
+
+
+def test_q_formats_ranked_matches(monkeypatch):
+    import shss.cases as cases_module
+
+    case = {"id": "energie", "requests": ["x"], "script": "y"}
+    monkeypatch.setattr(
+        cases_module,
+        "find_matches_all_profiles",
+        lambda query, **kw: [(case, 0.951, "energie consommee par le pc", "pc-stats")],
+    )
+
+    out = try_builtin("q mon pc va bien ?", _FakeMiniLLM())
+
+    assert "95.1%" in out
+    assert "pc-stats" in out
+    assert "energie" in out
+    assert "energie consommee par le pc" in out
+
+
+def test_q_no_matches_says_so(monkeypatch):
+    import shss.cases as cases_module
+
+    monkeypatch.setattr(cases_module, "find_matches_all_profiles", lambda query, **kw: [])
+
+    out = try_builtin("q recette de gateau", _FakeMiniLLM())
+
+    assert "Aucun cas curate" in out
+
+
+def test_q_shows_default_profile_label_for_none(monkeypatch):
+    import shss.cases as cases_module
+
+    case = {"id": "fix-select", "requests": ["x"], "script": "y"}
+    monkeypatch.setattr(
+        cases_module,
+        "find_matches_all_profiles",
+        lambda query, **kw: [(case, 0.6, "corrige ma ligne", None)],
+    )
+
+    out = try_builtin("q une question", _FakeMiniLLM())
+
+    assert "defaut" in out
+
+
+def test_q_missing_embedding_model_gives_clean_error(monkeypatch):
+    import shss.cases as cases_module
+
+    def boom(query, **kw):
+        raise FileNotFoundError("GGUF introuvable pour le modele d'embeddings")
+
+    monkeypatch.setattr(cases_module, "find_matches_all_profiles", boom)
+
+    out = try_builtin("q une question", _FakeMiniLLM())
+
+    assert "GGUF introuvable" in out
+    assert "Traceback" not in out

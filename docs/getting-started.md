@@ -294,8 +294,17 @@ chargement du modèle) :
 ./bin/shss -c '#@ history 5 @#'              # équivalent de --history 5
 ./bin/shss -c '#@ feedback bon @#'           # note la resolution precedente comme satisfaisante
 ./bin/shss -c '#@ feedback mauvais trop lent @#'  # ...ou pas, avec un commentaire libre optionnel
+./bin/shss -c '#@ q comment reprendre une session terminal @#'  # cherche, ne resout rien
 ./bin/shss -c '#@ help @#'                   # rappelle ces commandes
 ```
+
+`#@ q <question> @#` ne resout ni ne reutilise rien -- cherche dans tous
+les profils installes + la base par defaut (comme `#@all@`, mais sans
+filtre de seuil ni execution : lister n'a aucun des risques d'une vraie
+reutilisation) et affiche jusqu'a 20 demandes curatees classees par
+score de similarite, avec leur profil d'origine. Pense pour le cas ou on
+ne sait pas si un cas existe deja, ou comment le formuler pour qu'il
+matche.
 
 `model <tag>` accepte un tag seul (suppose `qwen2.5-coder`, ex: `3b`) ou
 `nom:tag` complet (ex: `deepseek-coder:1.3b`) pour changer de famille de
@@ -457,17 +466,21 @@ Le rôle précis de chaque fichier :
     vide `self._llm` pour forcer un rechargement lazy au prochain appel.
 - **`src/shss/commands.py`** — `try_builtin(request, mini_llm)` :
   reconnaît `models`, `model <tag>`, `history [N]`, `feedback bon`,
-  `feedback mauvais [commentaire]`, `help` (insensible à la casse) et
-  retourne le texte à afficher, ou `None` si `request` n'est pas une
-  commande connue (le flux normal vers le LLM reprend alors).
-  Volontairement du texte pur, jamais de picker interactif à navigation
-  clavier ici — voir section 9 pour pourquoi (et où ce picker existe
-  quand même, côté bash, via `fzf`). `feedback ...` appelle
-  `resolutions.log_feedback()` comme effet de bord (avant même que ce
-  builtin ne soit lui-même journalisé, comme n'importe quel autre, dans
-  `history.jsonl` cette fois) puis confirme sur quelle demande l'avis
-  porte. `history [N]` lit `history.py` (voir plus bas), pas
-  `resolutions.py`.
+  `feedback mauvais [commentaire]`, `q <question>`, `help` (insensible
+  à la casse) et retourne le texte à afficher, ou `None` si `request`
+  n'est pas une commande connue (le flux normal vers le LLM reprend
+  alors). Volontairement du texte pur, jamais de picker interactif à
+  navigation clavier ici — voir section 9 pour pourquoi (et où ce
+  picker existe quand même, côté bash, via `fzf`). `feedback ...`
+  appelle `resolutions.log_feedback()` comme effet de bord (avant même
+  que ce builtin ne soit lui-même journalisé, comme n'importe quel
+  autre, dans `history.jsonl` cette fois) puis confirme sur quelle
+  demande l'avis porte. `history [N]` lit `history.py` (voir plus bas),
+  pas `resolutions.py`. `q <question>` appelle
+  `cases.find_matches_all_profiles()` (tous profils + base par défaut,
+  sans filtre de seuil — voir `cases.py` plus bas) et formate un
+  classement ; ne résout ni ne réutilise jamais rien, purement
+  informatif.
 - **`src/shss/history.py`** — le journal brut, voir section 8 :
   - `log_line(line)` — ajoute une ligne JSON (`timestamp`, `line`) à
     `~/.shss/history.jsonl` (ou `SHSS_HISTORY_PATH`) — `line` est le

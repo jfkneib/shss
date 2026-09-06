@@ -604,8 +604,27 @@ def best_match_all_profiles(query, embedder=None, threshold=None):
     chaque profil (find_matches() ne prend pas de vecteur precalcule) --
     negligeable au nombre de profils attendu (quelques-uns), a revoir
     si ca devait un jour grossir beaucoup."""
+    ranked = _find_matches_across_profiles(query, embedder=embedder, top_k=1)
+    if not ranked:
+        return None
+    case, score, _matched_request, profile = ranked[0]
+    if score < _case_threshold(case, threshold):
+        return None
+    payload, _normalized = extract_payload(query)
+    return case, score, payload, profile
+
+
+def _find_matches_across_profiles(query, embedder=None, top_k=20):
+    """Coeur partage entre best_match_all_profiles() (garde le meilleur,
+    au-dessus de son seuil) et find_matches_all_profiles() (liste les
+    `top_k` meilleurs, sans filtre de seuil) : interroge chaque profil
+    installe + la base par defaut, avec un seul Embedder partage, et
+    fusionne le tout par score decroissant.
+
+    Retourne jusqu'a `top_k` tuples (cas, score, formulation la plus
+    proche, profil) -- `profil` est None pour la base par defaut."""
     shared_embedder = embedder
-    best = None  # (score, case, payload, profile)
+    all_matches = []  # (score, case, matched_request, profile)
     for profile in [None] + list_profiles():
         cases_path = _profile_root(profile) / "cases.json"
         cases = load_cases(cases_path)
@@ -616,17 +635,25 @@ def best_match_all_profiles(query, embedder=None, threshold=None):
             continue
         if shared_embedder is None:
             shared_embedder = Embedder()
-        matches = find_matches(query, cases=cases, cache=cache, embedder=shared_embedder, top_k=1)
-        if not matches:
-            continue
-        case, score, _matched_request = matches[0]
-        if score < _case_threshold(case, threshold):
-            continue
-        if best is None or score > best[0]:
-            best = (score, case, profile)
+        matches = find_matches(query, cases=cases, cache=cache, embedder=shared_embedder, top_k=top_k)
+        for case, score, matched_request in matches:
+            all_matches.append((score, case, matched_request, profile))
 
-    if best is None:
-        return None
-    score, case, profile = best
-    payload, _normalized = extract_payload(query)
-    return case, score, payload, profile
+    all_matches.sort(key=lambda t: t[0], reverse=True)
+    return [(case, score, req, profile) for score, case, req, profile in all_matches[:top_k]]
+
+
+def find_matches_all_profiles(query, embedder=None, top_k=20):
+    """Comme find_matches(), mais a travers tous les profils installes +
+    la base par defaut : les `top_k` cas les plus proches, tries par
+    score decroissant, **sans filtre de seuil** -- contrairement a
+    best_match_all_profiles(), rien ici ne sera jamais reutilise tel
+    quel, juste liste, donc aucune raison de cacher un score bas (ca
+    reste une information utile : "voila ce qui existe de plus proche,
+    meme si ce n'est pas terrible" plutot qu'un silence qui ne dit pas
+    s'il n'y a vraiment rien ou si le seuil a juste ecarte quelque chose).
+
+    Sert a `#@ q ... @#` (voir commands.py) : quand on ne sait pas quoi
+    demander, lister les demandes curatees les plus proches plutot que
+    de deviner ou de forcer une resolution en dessous du seuil normal."""
+    return _find_matches_across_profiles(query, embedder=embedder, top_k=top_k)

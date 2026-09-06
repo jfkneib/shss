@@ -42,6 +42,9 @@ HELP_TEXT = """Commandes utilitaires shss (traitees directement, sans appeler le
   #@ feedback bon @#       note la derniere resolution comme satisfaisante
   #@ feedback mauvais [commentaire] @#  note-la comme insatisfaisante,
                             avec un commentaire libre optionnel
+  #@ q <ta question> @#    ne resout rien -- liste les 20 demandes curatees
+                            les plus proches (tous profils installes), avec
+                            leur score, pour trouver quoi demander exactement
   #@ help @#               affiche cette aide"""
 
 
@@ -178,6 +181,36 @@ def _format_feedback(feedback: str, comment: str) -> str:
     return f"shss: avis « {feedback} » enregistre{detail}."
 
 
+def _format_search(query: str) -> str:
+    """#@ q <question> @# -- ne resout rien, ne reutilise rien : liste
+    juste les demandes curatees les plus proches (tous profils
+    installes + la base par defaut), pour trouver quoi demander quand
+    on ne sait pas exactement comment formuler. Voir
+    cases.find_matches_all_profiles() : pas de filtre de seuil ici,
+    contrairement a une resolution normale -- un score bas reste une
+    information utile plutot qu'un silence ambigu."""
+    from . import cases as cases_module
+
+    try:
+        matches = cases_module.find_matches_all_profiles(query, top_k=20)
+    except FileNotFoundError as exc:
+        # Modele d'embeddings absent -- meme message d'erreur que
+        # partout ailleurs (shss-cases test, best_match), pas la peine
+        # de le reformuler ici.
+        return f"shss: {exc}"
+
+    if not matches:
+        return f"Aucun cas curate installe pour comparer a : {query!r}."
+
+    lines = [f"Cas curates les plus proches de {query!r} :"]
+    for case, score, matched_request, profile in matches:
+        label = profile or "defaut"
+        lines.append(
+            f"  {score * 100:5.1f}%  [{label:<10}] {case['id']:<24} -- {matched_request!r}"
+        )
+    return "\n".join(lines)
+
+
 # "models" (liste) et "model" (changement) sont proches -- accepter les
 # deux orthographes FR/EN, et renvoyer une aide plutot que de laisser
 # filer au LLM quand c'est presque bon (`models 3b`, `modele` seul...).
@@ -234,6 +267,11 @@ def try_builtin(request: str, mini_llm):
         return (
             f"shss: « {sub} » non reconnu -- feedback bon / feedback mauvais [commentaire]"
         )
+
+    if head_lower == "q":
+        if not rest:
+            return "shss: precise une question -- #@ q <ta question> @#"
+        return _format_search(rest)
 
     if lower in ("help", "aide", "?"):
         return HELP_TEXT

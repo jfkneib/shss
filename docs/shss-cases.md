@@ -291,6 +291,36 @@ proprement comme dans son propre profil — une recherche littérale de
 bug : le prix assumé de chercher partout plutôt que dans un seul
 domaine bien délimité.
 
+### `#@ q <question> @#` : chercher sans jamais réutiliser
+
+`#@all@` reste une résolution — un cas est retenu et exécuté, avec le
+risque de faux positif ci-dessus. `#@ q <question> @#` (builtin, voir
+`commands.py`) est différent : il **ne résout ni ne réutilise jamais
+rien**, juste une liste des cas les plus proches, pensé pour le moment
+où on ne sait pas si un cas existe déjà ou comment le formuler pour
+qu'il matche.
+
+Cherche dans tous les profils installés + la base par défaut (comme
+`#@all@`), mais **sans filtre de seuil** : `cases.find_matches_all_profiles()`
+retourne jusqu'à 20 résultats classés par score, y compris des scores
+bien en dessous de `SHSS_CASES_THRESHOLD` — un score bas reste une
+information utile (« voilà ce qui s'en rapproche le plus, mais rien de
+vraiment proche ») plutôt qu'un silence ambigu. Puisque rien n'est
+jamais exécuté à partir de ce classement, le risque de faux positif qui
+justifie la prudence de `#@all@` ne s'applique pas ici — aucune raison
+de filtrer.
+
+```text
+#@ q comment reprendre une session terminal @#
+```
+
+```text
+Cas curates les plus proches de 'comment reprendre une session terminal' :
+   72.5%  [tmux      ] tmux-reprendre-defaut    -- 'reconnecte moi a ma session tmux'
+   70.8%  [tmux      ] tmux-reprendre-session   -- 'reconnecte moi a la session tmux "travail"'
+   ...
+```
+
 ## 8. Limites connues
 
 - Le modèle d'embeddings (`nomic-embed-text`, distinct du modèle de

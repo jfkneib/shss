@@ -352,8 +352,16 @@ shss — never sent to the LLM, so instant:
 #@ history 10 @#              # same as shss --history 10
 #@ feedback bon @#            # flag the previous resolution as satisfying
 #@ feedback mauvais too slow @#  # ...or not, with an optional free-text comment
+#@ q which pc question exists already @#  # don't know how to phrase it? list the 20 closest curated requests
 #@ help @#                    # recall these commands
 ```
+
+`#@ q <question> @#` resolves nothing and reuses nothing — it searches every
+installed profile + the default base (like `#@all@`, but read-only: no
+threshold, no risk of a wrong reuse, since nothing ever gets executed off
+of it) and lists up to 20 curated requests ranked by similarity, with
+their score and which profile each comes from. Useful when you don't
+know an existing case exists, or how close your phrasing needs to be.
 
 `#@ model <tag> @#` switches the model for the rest of the current
 **REPL** session; in `-c` mode or via `Ctrl-G` in a normal console, each

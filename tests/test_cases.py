@@ -580,6 +580,77 @@ def test_best_match_all_profiles_falls_back_to_default_profile_none(monkeypatch,
     assert profile is None  # la base par defaut, pas un profil nomme
 
 
+def test_find_matches_all_profiles_short_circuits_when_nothing_installed(monkeypatch, tmp_path):
+    monkeypatch.setattr(cases_module.Path, "home", staticmethod(lambda: tmp_path))
+
+    def _boom(*a, **kw):
+        raise AssertionError("ne doit pas instancier d'Embedder si rien n'est installe")
+
+    monkeypatch.setattr(cases_module, "Embedder", _boom)
+    assert cases_module.find_matches_all_profiles("n'importe quoi") == []
+
+
+def test_find_matches_all_profiles_ranks_across_profiles_without_threshold_filter(monkeypatch, tmp_path):
+    monkeypatch.setattr(cases_module.Path, "home", staticmethod(lambda: tmp_path))
+    embedder = FakeEmbedder()
+
+    default_cases = [
+        {"id": "tri", "requests": ["trie les fichiers par taille"], "script": "x"}
+    ]
+    default_path = tmp_path / ".shss" / "cases.json"
+    cases_module.save_cases(default_cases, path=default_path)
+    cases_module.reindex(default_cases, embedder=embedder, cache_path=default_path.with_name("cases.embeddings.json"))
+
+    pcstats_cases = [
+        {"id": "energie", "requests": ["energie consommee par le pc"], "script": "x"}
+    ]
+    pcstats_path = tmp_path / ".shss" / "profiles" / "pc-stats" / "cases.json"
+    cases_module.save_cases(pcstats_cases, path=pcstats_path)
+    cases_module.reindex(
+        pcstats_cases, embedder=embedder, cache_path=pcstats_path.with_name("cases.embeddings.json")
+    )
+
+    dev_cases = [
+        {"id": "conso", "requests": ["combien consomme mon ordinateur"], "script": "x"}
+    ]
+    dev_path = tmp_path / ".shss" / "profiles" / "dev" / "cases.json"
+    cases_module.save_cases(dev_cases, path=dev_path)
+    cases_module.reindex(dev_cases, embedder=embedder, cache_path=dev_path.with_name("cases.embeddings.json"))
+
+    results = cases_module.find_matches_all_profiles(
+        "energie consommee par le pc", embedder=embedder, top_k=20
+    )
+
+    # Classe par score decroissant, les trois profils representes --
+    # "tri" a un score de 0 (aucun rapport) mais apparait quand meme :
+    # pas de filtre de seuil ici, contrairement a best_match_all_profiles().
+    assert [case["id"] for case, _score, _req, _profile in results] == ["energie", "conso", "tri"]
+    assert [profile for _case, _score, _req, profile in results] == ["pc-stats", "dev", None]
+    assert results[0][1] > results[1][1] > results[2][1]
+    assert results[2][1] == 0.0
+
+
+def test_find_matches_all_profiles_respects_top_k(monkeypatch, tmp_path):
+    monkeypatch.setattr(cases_module.Path, "home", staticmethod(lambda: tmp_path))
+    embedder = FakeEmbedder()
+
+    cases = [
+        {"id": "energie", "requests": ["energie consommee par le pc"], "script": "x"},
+        {"id": "conso", "requests": ["combien consomme mon ordinateur"], "script": "x"},
+        {"id": "tri", "requests": ["trie les fichiers par taille"], "script": "x"},
+    ]
+    path = tmp_path / ".shss" / "cases.json"
+    cases_module.save_cases(cases, path=path)
+    cases_module.reindex(cases, embedder=embedder, cache_path=path.with_name("cases.embeddings.json"))
+
+    results = cases_module.find_matches_all_profiles(
+        "energie consommee par le pc", embedder=embedder, top_k=2
+    )
+
+    assert len(results) == 2
+    assert [case["id"] for case, _s, _r, _p in results] == ["energie", "conso"]
+
+
 def test_discover_embedding_model_path_raises_with_helpful_message(monkeypatch, tmp_path):
     monkeypatch.delenv("SHSS_EMBED_MODEL_PATH", raising=False)
     monkeypatch.setattr(cases_module, "_discover_ollama_only", _raise_not_found)
