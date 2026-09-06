@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+#
+# tm-attach [nom] -- se rattache a une session tmux.
+#   - nom donne : s'y attache directement (erreur claire si absente).
+#   - nom absent : sonde ce qui existe reellement (jamais de nom
+#     devine) -- une seule session -> s'y attache, plusieurs -> les
+#     liste et demande de preciser, aucune -> le dit clairement.
+#
+# Meme contrainte de terminal que tm-new-session (voir son commentaire
+# et profiles/tmux/README.md) : verifiee ici avant tout le reste.
+
+set -u
+
+if [ ! -t 0 ] || [ ! -t 1 ]; then
+    echo "tm-attach : pas de terminal reel ici -- ce cas ne fonctionne que" >&2
+    echo "via l'integration Ctrl-G/bashrc (shell-integration/shss.bash)," >&2
+    echo "pas dans le REPL shss ni en mode -c (voir profiles/tmux/README.md)." >&2
+    exit 1
+fi
+
+name="${1:-}"
+
+if [ -n "$name" ]; then
+    if ! tmux has-session -t "$name" 2>/dev/null; then
+        echo "tm-attach : aucune session tmux nommee '$name'." >&2
+        echo "Sessions actuelles :" >&2
+        tmux ls 1>&2 2>&1 || echo "(aucune)" >&2
+        exit 1
+    fi
+    exec tmux attach -t "$name"
+fi
+
+# Pas de nom precise -- sonder ce qui existe reellement plutot que de
+# deviner (meme principe que pc-uptime/pc-battery-info dans pc-stats).
+sessions="$(tmux list-sessions -F '#{session_name}' 2>/dev/null)"
+count=$(printf '%s\n' "$sessions" | grep -c .)
+
+if [ "$count" -eq 0 ]; then
+    echo "tm-attach : aucune session tmux en cours -- rien a reprendre." >&2
+    exit 1
+elif [ "$count" -eq 1 ]; then
+    exec tmux attach -t "$sessions"
+else
+    echo "tm-attach : plusieurs sessions tmux, precise laquelle :" >&2
+    tmux ls 1>&2 2>&1
+    exit 1
+fi

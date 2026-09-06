@@ -1,0 +1,65 @@
+[
+  {
+    "id": "tmux-liste",
+    "requests": [
+      "liste mes sessions tmux",
+      "quelles sessions tmux existent",
+      "y a til des sessions tmux ouvertes",
+      "sessions tmux en cours"
+    ],
+    "script": "#!/usr/bin/env bash\n#\n# Cas curate \"tmux-liste\" -- appelle le script correspondant range dans\n# le profil (voir SHSS_PROFILE_DIR, docs/shss-cases.md) plutot que d'en\n# embarquer une copie.\n#\n# Route par OS (uname -s) : seul linux/ existe aujourd'hui.\n\nos=\"$(uname -s)\"\ncase \"$os\" in\n    Linux)\n        exec \"$SHSS_PROFILE_DIR/scripts/linux/bin/tm-list\"\n        ;;\n    *)\n        echo \"tmux-liste : pas encore pris en charge sur cet OS ($os) -- seul linux/ existe aujourd'hui.\" >&2\n        exit 1\n        ;;\nesac\n"
+  },
+  {
+    "id": "tmux-tuer-session",
+    "requests": [
+      "ferme la session tmux \"travail\"",
+      "tue la session tmux \"travail\"",
+      "supprime la session tmux \"travail\""
+    ],
+    "script": "#!/usr/bin/env bash\n#\n# Cas curate \"tmux-tuer-session\" -- cas gabarit (--stdin), nom de\n# session capture entre guillemets dans la demande et transmis sur\n# stdin (voir docs/shss-cases.md section 4) -- jamais colle dans ce\n# script, aucun risque d'injection.\n\nset -u\n\nname=\"\"\nif [ ! -t 0 ]; then\n    name=$(cat)\nfi\n\nif [ -z \"$name\" ]; then\n    echo \"tmux-tuer-session : aucun nom de session reconnu dans la demande (rien entre guillemets).\" >&2\n    exit 1\nfi\n\nos=\"$(uname -s)\"\ncase \"$os\" in\n    Linux)\n        exec \"$SHSS_PROFILE_DIR/scripts/linux/bin/tm-kill-session\" \"$name\"\n        ;;\n    *)\n        echo \"tmux-tuer-session : pas encore pris en charge sur cet OS ($os) -- seul linux/ existe aujourd'hui.\" >&2\n        exit 1\n        ;;\nesac\n",
+    "note": "portee = une session precise, jamais tuer-tout",
+    "input": "stdin"
+  },
+  {
+    "id": "tmux-tuer-tout",
+    "requests": [
+      "ferme toutes mes sessions tmux",
+      "tue le serveur tmux",
+      "arrete tmux completement"
+    ],
+    "script": "#!/usr/bin/env bash\n#\n# Cas curate \"tmux-tuer-tout\" -- ferme toutes les sessions tmux\n# (arrete le serveur). Destructif mais non interactif -- voir\n# tm-kill-all pour les details.\n\nos=\"$(uname -s)\"\ncase \"$os\" in\n    Linux)\n        exec \"$SHSS_PROFILE_DIR/scripts/linux/bin/tm-kill-all\"\n        ;;\n    *)\n        echo \"tmux-tuer-tout : pas encore pris en charge sur cet OS ($os) -- seul linux/ existe aujourd'hui.\" >&2\n        exit 1\n        ;;\nesac\n",
+    "note": "destructif -- kill-server, pas juste une session"
+  },
+  {
+    "id": "tmux-nouvelle-session",
+    "requests": [
+      "cree une session tmux \"travail\"",
+      "demarre une session tmux appelee \"travail\"",
+      "ouvre une session tmux \"travail\""
+    ],
+    "script": "#!/usr/bin/env bash\n#\n# Cas curate \"tmux-nouvelle-session\" -- cas gabarit (--stdin), nom de\n# session capture entre guillemets. Interactif par nature (voir\n# tm-new-session et profiles/tmux/README.md) : fiable via Ctrl-G/\n# bashrc, refuse proprement (message clair) via le REPL/-c faute de\n# vrai terminal -- verifie en pratique, pas suppose.\n\nset -u\n\nname=\"\"\nif [ ! -t 0 ]; then\n    name=$(cat)\nfi\n\nif [ -z \"$name\" ]; then\n    echo \"tmux-nouvelle-session : aucun nom de session reconnu dans la demande (rien entre guillemets).\" >&2\n    exit 1\nfi\n\nos=\"$(uname -s)\"\ncase \"$os\" in\n    Linux)\n        exec \"$SHSS_PROFILE_DIR/scripts/linux/bin/tm-new-session\" \"$name\"\n        ;;\n    *)\n        echo \"tmux-nouvelle-session : pas encore pris en charge sur cet OS ($os) -- seul linux/ existe aujourd'hui.\" >&2\n        exit 1\n        ;;\nesac\n",
+    "note": "interactif -- fiable via Ctrl-G/bashrc seulement, verifie en pratique (voir README)",
+    "input": "stdin"
+  },
+  {
+    "id": "tmux-reprendre-session",
+    "requests": [
+      "reprends la session tmux \"travail\"",
+      "rattache moi a la session tmux \"travail\"",
+      "reconnecte moi a la session tmux \"travail\""
+    ],
+    "script": "#!/usr/bin/env bash\n#\n# Cas curate \"tmux-reprendre-session\" -- cas gabarit (--stdin), nom de\n# session capture entre guillemets. Meme contrainte de terminal que\n# tmux-nouvelle-session (voir tm-attach et profiles/tmux/README.md).\n\nset -u\n\nname=\"\"\nif [ ! -t 0 ]; then\n    name=$(cat)\nfi\n\nif [ -z \"$name\" ]; then\n    echo \"tmux-reprendre-session : aucun nom de session reconnu dans la demande (rien entre guillemets).\" >&2\n    exit 1\nfi\n\nos=\"$(uname -s)\"\ncase \"$os\" in\n    Linux)\n        exec \"$SHSS_PROFILE_DIR/scripts/linux/bin/tm-attach\" \"$name\"\n        ;;\n    *)\n        echo \"tmux-reprendre-session : pas encore pris en charge sur cet OS ($os) -- seul linux/ existe aujourd'hui.\" >&2\n        exit 1\n        ;;\nesac\n",
+    "note": "interactif -- meme contrainte que tmux-nouvelle-session",
+    "input": "stdin"
+  },
+  {
+    "id": "tmux-reprendre-defaut",
+    "requests": [
+      "reprends ma session tmux",
+      "rattache moi a tmux",
+      "reconnecte moi a ma session tmux"
+    ],
+    "script": "#!/usr/bin/env bash\n#\n# Cas curate \"tmux-reprendre-defaut\" -- reprendre \"la\" session tmux\n# sans en preciser le nom : tm-attach sonde ce qui existe reellement\n# (une seule session -> s'y attache, plusieurs -> les liste, aucune ->\n# le dit) plutot que de deviner. Pas un cas gabarit : aucun contenu\n# variable dans la demande.\n\nos=\"$(uname -s)\"\ncase \"$os\" in\n    Linux)\n        exec \"$SHSS_PROFILE_DIR/scripts/linux/bin/tm-attach\"\n        ;;\n    *)\n        echo \"tmux-reprendre-defaut : pas encore pris en charge sur cet OS ($os) -- seul linux/ existe aujourd'hui.\" >&2\n        exit 1\n        ;;\nesac\n",
+    "note": "aucun nom precise -- tm-attach sonde ce qui existe reellement"
+  }
+]

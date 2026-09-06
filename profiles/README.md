@@ -122,3 +122,7 @@ construisant `pc-stats` — pas une liste théorique :
   répertoire courant ou `$HOME`). Premier profil bâti quasi entièrement
   sur des cas « gabarit » (`--stdin`) plutôt que des cas figés — le
   motif recherché change à chaque demande.
+- **`tmux/`** — sessions persistantes (lister/créer/reprendre/fermer).
+  Premier profil avec des cas franchement interactifs (prise de
+  contrôle du terminal) — contrainte de TTY vérifiée en pratique avant
+  d'écrire quoi que ce soit, voir son README pour le détail.
