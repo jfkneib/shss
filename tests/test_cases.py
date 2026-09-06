@@ -70,6 +70,24 @@ def test_cases_path_explicit_override_wins_over_profile(monkeypatch, tmp_path):
     assert cases_module._cases_path() == tmp_path / "explicite.json"
 
 
+def test_cache_path_ignores_env_override_when_an_explicit_cases_path_is_given(monkeypatch, tmp_path):
+    # SHSS_CASES_CACHE_PATH ne doit forcer que le cache du profil
+    # COURANT (cases_path=None, comme SHSS_CASES_PATH pour _cases_path())
+    # -- jamais celui d'un profil precis passe explicitement, sinon
+    # _find_matches_across_profiles() (plusieurs profils, chacun avec
+    # son propre cases_path) verrait tous les profils pointer vers le
+    # meme cache impose. Bug reel trouve en pratique : un test qui
+    # isolait ainsi le profil par defaut faisait echouer silencieusement
+    # toute recherche multi-profils (0 resultat au lieu des vrais cas).
+    monkeypatch.setenv("SHSS_CASES_CACHE_PATH", str(tmp_path / "force.embeddings.json"))
+
+    explicit = tmp_path / "profiles" / "dev" / "cases.json"
+    assert cases_module._cache_path(explicit) == tmp_path / "profiles" / "dev" / "cases.embeddings.json"
+
+    # Sans argument (profil courant), l'override s'applique toujours.
+    assert cases_module._cache_path() == tmp_path / "force.embeddings.json"
+
+
 def test_cases_profile_rejects_unsafe_name(monkeypatch):
     monkeypatch.delenv("SHSS_CASES_PATH", raising=False)
     monkeypatch.setenv("SHSS_CASES_PROFILE", "../../etc")

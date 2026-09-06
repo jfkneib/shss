@@ -609,6 +609,35 @@ class MiniLLM:
             )
             return result
 
+        # Rien de curate n'a matche -- avant de lancer la generation (le
+        # plus lent, plusieurs secondes), regarde si un cas existe quand
+        # meme quelque part, meme en dessous du seuil de reutilisation :
+        # jamais un filtre bloquant (le modele generatif n'a aucune
+        # facon fiable de savoir lui-meme s'il comprend une demande,
+        # verifie en pratique -- voir "Known limitations" du README),
+        # juste une information affichee a cote du resultat genere,
+        # meme principe que #@ q ... @# (commands.py). Cout mesure
+        # (embedder recharge) : ~0.2-0.4s, negligeable devant la
+        # generation elle-meme ; gratuit si aucun cas n'est installe
+        # nulle part (find_matches_all_profiles() ne charge alors aucun
+        # modele).
+        closest_note = None
+        try:
+            from .cases import find_matches_all_profiles
+
+            closest = find_matches_all_profiles(request, top_k=1)
+            if closest:
+                near_case, near_score, _near_req, near_profile = closest[0]
+                label = near_profile or "défaut"
+                closest_note = (
+                    f"# aucun cas curaté réutilisé -- le plus proche : "
+                    f"« {near_case['id']} » ({near_score * 100:.1f}%, profil {label})"
+                )
+        except FileNotFoundError:
+            # Modele d'embeddings absent : cette note est un bonus,
+            # jamais bloquant pour la generation elle-meme.
+            pass
+
         self._ensure_loaded()
         context = build_context(request)
         prompt = FEW_SHOT.format(request=request, prefix=prefix, suffix=suffix, context=context)
@@ -630,7 +659,13 @@ class MiniLLM:
             kind = "inline"
             display = text.split("\n", 1)[0].strip()
 
-        if confirm is not None and not confirm(display):
+        # La note ne va jamais dans `result` (ce qui s'execute/se colle
+        # dans la ligne) : un commentaire colle avant un fragment casse
+        # la syntaxe de la ligne bash environnante. Seul l'apercu
+        # (confirm / affichage REPL) la voit.
+        display_with_note = f"{closest_note}\n{display}" if closest_note else display
+
+        if confirm is not None and not confirm(display_with_note):
             raise ResolutionCancelled()
 
         result = _write_script(text) if kind == "script" else display

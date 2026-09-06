@@ -478,6 +478,22 @@ single example (extension **and** size together) did. Remaining known
 gap: a size-threshold request that names no file extension at all
 generalizes less reliably than one that does.
 
+The model also has no reliable way to know when it doesn't understand a
+request at all — tested directly: asked to classify its own input
+("can this be solved with a bash/python command? answer OUI/NON"), it
+answered "OUI" to a chocolate cake recipe, and for a general-knowledge
+question ignored the yes/no instruction entirely and answered the
+question itself ("Paris"). Expected for a **base** model — no
+instruction-tuning/RLHF, no real self-assessment, just its trained
+completion pattern applied regardless of relevance. Mitigation that
+*is* in place, since self-classification isn't viable: every generated
+(non-curated) resolution now shows the closest curated case anyway
+(`# aucun cas curaté réutilisé -- le plus proche : « id » (score%,
+profil X)`), purely informational — a low score doesn't mean the
+request was nonsense (a legitimate but uncurated request, e.g.
+"compress this folder as 7z", scores just as low), but it does tell you
+the answer is an ungrounded guess, not a known-good curated one.
+
 Another pitfall observed and fixed: without a repetition penalty,
 `llama-cpp-python` can make the model loop on a degenerate pattern until
 the `max_tokens` cutoff — e.g. a complex request generated

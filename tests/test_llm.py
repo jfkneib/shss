@@ -343,6 +343,60 @@ def test_generate_bash_falls_through_to_llm_without_confident_case_match(monkeyp
     assert llm._llm.last_prompt is not None
 
 
+def test_generate_bash_llm_fallback_shows_closest_case_note_but_never_in_result(monkeypatch, tmp_path):
+    import shss.cases as cases_module
+
+    llm = _fake_shss(monkeypatch, tmp_path, "-S")
+    monkeypatch.setattr(cases_module, "best_match", lambda request, **kw: None)
+    near_case = {"id": "tri", "requests": ["x"], "script": "y"}
+    monkeypatch.setattr(
+        cases_module,
+        "find_matches_all_profiles",
+        lambda request, **kw: [(near_case, 0.123, "trie les machins", "dev")],
+    )
+    seen = {}
+
+    result = llm.generate_bash(
+        "un truc pas couvert", "ls ", "", confirm=lambda text: seen.setdefault("text", text) or True
+    )
+
+    assert result == "-S"  # la note ne pollue jamais ce qui s'execute
+    assert "12.3%" in seen["text"]
+    assert "tri" in seen["text"]
+    assert "dev" in seen["text"]
+
+
+def test_generate_bash_llm_fallback_no_note_when_nothing_curated_exists(monkeypatch, tmp_path):
+    import shss.cases as cases_module
+
+    llm = _fake_shss(monkeypatch, tmp_path, "-S")
+    monkeypatch.setattr(cases_module, "best_match", lambda request, **kw: None)
+    monkeypatch.setattr(cases_module, "find_matches_all_profiles", lambda request, **kw: [])
+    seen = {}
+
+    llm.generate_bash(
+        "un truc pas couvert", "ls ", "", confirm=lambda text: seen.setdefault("text", text) or True
+    )
+
+    assert seen["text"] == "-S"  # pas de note quand il n'y a rien a comparer
+
+
+def test_generate_bash_llm_fallback_survives_missing_embedding_model(monkeypatch, tmp_path):
+    import shss.cases as cases_module
+
+    llm = _fake_shss(monkeypatch, tmp_path, "-S")
+    monkeypatch.setattr(cases_module, "best_match", lambda request, **kw: None)
+
+    def _boom(*a, **kw):
+        raise FileNotFoundError("GGUF introuvable pour le modele d'embeddings")
+
+    monkeypatch.setattr(cases_module, "find_matches_all_profiles", _boom)
+
+    result = llm.generate_bash("un truc pas couvert", "ls ", "")
+
+    assert result == "-S"
+
+
 def test_generate_bash_case_match_still_honors_confirm(monkeypatch, tmp_path):
     import shss.cases as cases_module
 

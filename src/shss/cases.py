@@ -221,10 +221,21 @@ def list_profiles():
 
 
 def _cache_path(cases_path: Path = None) -> Path:
-    override = os.environ.get("SHSS_CASES_CACHE_PATH")
-    if override:
-        return Path(override)
-    cases_path = cases_path or _cases_path()
+    """Chemin du cache d'embeddings pour `cases_path`. `SHSS_CASES_CACHE_PATH`
+    ne s'applique que si `cases_path` est omis : cette variable force le
+    cache du profil COURANT (comme SHSS_CASES_PATH force ses cas), elle
+    n'a pas de sens pour un chemin explicite -- sinon
+    _find_matches_across_profiles() (plusieurs profils, chacun avec son
+    propre cases_path passe explicitement) verrait tous les profils
+    pointer vers le meme cache impose, au lieu du leur -- constate en
+    pratique : un test qui isole SHSS_CASES_CACHE_PATH pour le profil
+    par defaut faisait echouer silencieusement toute recherche
+    multi-profils (0 resultat au lieu des vrais cas installes)."""
+    if cases_path is None:
+        override = os.environ.get("SHSS_CASES_CACHE_PATH")
+        if override:
+            return Path(override)
+        cases_path = _cases_path()
     return cases_path.with_name(cases_path.stem + ".embeddings.json")
 
 

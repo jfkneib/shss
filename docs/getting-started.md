@@ -446,7 +446,14 @@ Le rôle précis de chaque fichier :
     si reconnu, court-circuite tout le reste (pas de modèle chargé, pas
     de `confirm`, résultat enveloppé en script d'affichage via
     `_as_display_script()` + `_write_script()`, journalisé avec
-    `kind="builtin"`). Sinon, charge le modèle au premier appel (lazy),
+    `kind="builtin"`). Sinon (rien de curaté n'a matché), calcule
+    d'abord `cases.find_matches_all_profiles(request, top_k=1)` (le cas
+    le plus proche, sans filtre de seuil) pour préparer une note
+    informative -- jamais collée dans `result` (casserait la syntaxe
+    d'un fragment inséré au milieu d'une ligne), seulement dans
+    l'aperçu montré via `confirm`. Le modèle génératif n'a aucune façon
+    fiable de savoir lui-même s'il comprend une demande (voir "Known
+    limitations" du README) ; charge le modèle au premier appel (lazy),
     appelle `context.build_context(request)` puis construit le prompt,
     appelle `llama_cpp.Llama(...)` (avec `repeat_penalty=1.1` — voir
     "Limites connues" dans le LISEZMOI pour le bug de répétition dégénérée
