@@ -154,6 +154,22 @@ def test_main_profile_flag_sets_env_var_before_dispatch(monkeypatch, tmp_path):
         os.environ.pop("SHSS_CASES_PROFILE", None)
 
 
+def test_main_rejects_reserved_profile_name_cleanly(monkeypatch, tmp_path, capsys):
+    monkeypatch.delenv("SHSS_CASES_PATH", raising=False)
+    monkeypatch.delenv("SHSS_CASES_PROFILE", raising=False)
+    monkeypatch.setattr(cases_module.Path, "home", staticmethod(lambda: tmp_path))
+
+    try:
+        code = cli_module.main(["--profile", "all", "list"])
+    finally:
+        os.environ.pop("SHSS_CASES_PROFILE", None)
+
+    assert code == 1
+    err = capsys.readouterr().err
+    assert "reserve" in err
+    assert "Traceback" not in err
+
+
 def test_main_without_profile_flag_leaves_env_var_untouched(monkeypatch, tmp_path):
     _setup_paths(monkeypatch, tmp_path)
     monkeypatch.delenv("SHSS_CASES_PROFILE", raising=False)

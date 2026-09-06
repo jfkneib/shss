@@ -187,8 +187,12 @@ Branché dans `llm.generate_bash()`, juste après les commandes internes
 (`#@ model @#`, etc.) et avant tout appel au modèle de génération. Une
 demande dont le meilleur score dépasse `SHSS_CASES_THRESHOLD` (0.70 par
 défaut) réutilise le script curaté tel quel, sans jamais charger le
-modèle de génération — visible dans `#@ history @#` avec le type
-`case`, distinct de `script`/`inline` (générés) et `builtin`.
+modèle de génération — visible dans `~/.shss/resolutions.jsonl` avec le
+`kind` `case` (score, `case_id`, `profile` inclus), distinct de
+`script`/`inline` (générés) et `builtin` (voir `docs/getting-started.md`
+section 8 pour le détail des deux journaux, `history.jsonl` et
+`resolutions.jsonl` — `#@ history @#`, lui, montre juste la balise
+telle que tapée, pas ce niveau de détail).
 
 Si la base est vide (le cas par défaut, rien de curaté au départ), rien
 n'est chargé : aucun coût ajouté pour une demande ordinaire.
@@ -245,6 +249,47 @@ différents, moins une formulation généraliste risque d'intercepter par
 erreur une demande d'un autre domaine (constaté en pratique avec un
 cas SQL qui matchait à tort une demande sur une commande bash
 quelconque — voir section 4).
+
+### `#@all@` : chercher dans tous les profils installés
+
+Le prix de cette séparation : une demande tapée sans savoir quel
+profil est actif (ou dans un terminal où rien n'a été exporté) ne
+matche rien, même si le bon cas existe ailleurs — elle repart en
+génération normale plutôt que de réutiliser le cas curaté attendu.
+
+`all` est un mot réservé, utilisable comme n'importe quel préfixe de
+profil :
+
+```text
+#@all@ energie consommee par le pc @#
+```
+
+Cherche dans **tous** les profils installés (`~/.shss/profiles/*/`) et
+la base par défaut, garde le meilleur score global tous profils
+confondus, quel que soit `SHSS_CASES_PROFILE` au moment de l'appel.
+L'aperçu (`shss a généré :`) précise alors de quel profil vient le cas
+retenu (`# cas « energie » (95.1% de similarité), profil pc-stats`) —
+seul `#@all@` l'affiche : dans tous les autres cas, le profil est déjà
+celui que l'utilisateur a choisi lui-même, inutile de le répéter à
+chaque résolution.
+
+**`all` ne peut pas être un vrai nom de profil** (`shss-cases
+--profile all add ...` refuse explicitement) — sinon indiscernable du
+mot-clé, un `~/.shss/profiles/all/` créé par erreur aurait pris le pas
+silencieusement.
+
+**À utiliser en connaissance de cause** : `#@all@` réintroduit
+exactement le risque de faux positif entre profils sans rapport que la
+séparation ci-dessus visait à éviter — volontairement, pour cette
+demande précise seulement, jamais par défaut. Constaté en pratique en
+écrivant ceci : `#@all@ corrige moi ma ligne bash : "select | id from
+t" @#` (l'exemple de la section 4, qui ne matche plus `fix-select` tel
+quel — seuil relevé à 0.82 depuis, voir sa note) est repartie sur
+`grep-motif-home` (profil `grep-search`, 77.6%) plutôt que d'échouer
+proprement comme dans son propre profil — une recherche littérale de
+`select | id from t` dans `$HOME`, sans rapport avec la demande. Pas un
+bug : le prix assumé de chercher partout plutôt que dans un seul
+domaine bien délimité.
 
 ## 8. Limites connues
 

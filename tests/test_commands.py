@@ -154,14 +154,13 @@ def test_model_command_reports_missing_model_without_raising():
 
 
 def test_history_command(monkeypatch, tmp_path):
-    from shss.history import log_event
+    from shss.history import log_line
 
     monkeypatch.setenv("SHSS_HISTORY_PATH", str(tmp_path / "history.jsonl"))
-    log_event("trie par taille", "ls ", "", "-S", "inline")
+    log_line("ls #@ trie par taille @#")
 
     out = try_builtin("history", _FakeMiniLLM())
-    assert "trie par taille" in out
-    assert "-S" in out
+    assert "ls #@ trie par taille @#" in out
 
 
 def test_history_command_empty(monkeypatch, tmp_path):
@@ -174,3 +173,47 @@ def test_help_command():
     out = try_builtin("help", _FakeMiniLLM())
     assert "models" in out
     assert "model <tag>" in out
+    assert "feedback" in out
+
+
+def test_feedback_without_argument_asks_for_one():
+    out = try_builtin("feedback", _FakeMiniLLM())
+    assert "bon" in out and "mauvais" in out
+
+
+def test_feedback_unknown_word_is_rejected():
+    out = try_builtin("feedback vraiment-pas-sur", _FakeMiniLLM())
+    assert "non reconnu" in out
+
+
+def test_feedback_bon_on_empty_history(monkeypatch, tmp_path):
+    monkeypatch.setenv("SHSS_RESOLUTIONS_PATH", str(tmp_path / "does-not-exist.jsonl"))
+    out = try_builtin("feedback bon", _FakeMiniLLM())
+    assert "vide" in out.lower()
+
+
+def test_feedback_mauvais_attaches_to_last_resolution_with_comment(monkeypatch, tmp_path):
+    from shss.resolutions import log_event, read_events
+
+    monkeypatch.setenv("SHSS_RESOLUTIONS_PATH", str(tmp_path / "resolutions.jsonl"))
+    log_event("energie consommee par le pc", "", "", "/tmp/x.sh", "case", score=0.9, case_id="energie")
+
+    out = try_builtin("feedback mauvais n'a pas mesure le GPU", _FakeMiniLLM())
+
+    assert "mauvais" in out
+    assert "energie consommee par le pc" in out
+    events = read_events(limit=20)
+    assert events[-1]["kind"] == "feedback"
+    assert events[-1]["comment"] == "n'a pas mesure le GPU"
+
+
+def test_feedback_bon_without_comment(monkeypatch, tmp_path):
+    from shss.resolutions import log_event
+
+    monkeypatch.setenv("SHSS_RESOLUTIONS_PATH", str(tmp_path / "resolutions.jsonl"))
+    log_event("trie par taille", "ls ", "", "-S", "inline")
+
+    out = try_builtin("feedback bon", _FakeMiniLLM())
+
+    assert "bon" in out
+    assert "trie par taille" in out

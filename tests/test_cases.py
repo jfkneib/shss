@@ -505,6 +505,81 @@ def test_best_match_returns_none_below_threshold(monkeypatch, tmp_path):
     assert match is None
 
 
+def test_profile_root_rejects_reserved_all():
+    try:
+        cases_module._profile_root("all")
+        assert False, "devrait lever ValueError"
+    except ValueError:
+        pass
+
+
+def test_cases_path_rejects_reserved_all_profile(monkeypatch):
+    monkeypatch.delenv("SHSS_CASES_PATH", raising=False)
+    monkeypatch.setenv("SHSS_CASES_PROFILE", "all")
+    try:
+        cases_module._cases_path()
+        assert False, "devrait lever ValueError"
+    except ValueError:
+        pass
+
+
+def test_best_match_all_profiles_short_circuits_when_nothing_installed(monkeypatch, tmp_path):
+    monkeypatch.setattr(cases_module.Path, "home", staticmethod(lambda: tmp_path))
+
+    def _boom(*a, **kw):
+        raise AssertionError("ne doit pas instancier d'Embedder si rien n'est installe")
+
+    monkeypatch.setattr(cases_module, "Embedder", _boom)
+    assert cases_module.best_match_all_profiles("n'importe quoi") is None
+
+
+def test_best_match_all_profiles_picks_global_best_and_reports_its_profile(monkeypatch, tmp_path):
+    monkeypatch.setattr(cases_module.Path, "home", staticmethod(lambda: tmp_path))
+    embedder = FakeEmbedder()
+
+    default_cases = [
+        {"id": "tri", "requests": ["trie les fichiers par taille"], "script": "x"}
+    ]
+    default_path = tmp_path / ".shss" / "cases.json"
+    cases_module.save_cases(default_cases, path=default_path)
+    cases_module.reindex(default_cases, embedder=embedder, cache_path=default_path.with_name("cases.embeddings.json"))
+
+    pcstats_cases = [
+        {"id": "energie", "requests": ["energie consommee par le pc"], "script": "x"}
+    ]
+    pcstats_path = tmp_path / ".shss" / "profiles" / "pc-stats" / "cases.json"
+    cases_module.save_cases(pcstats_cases, path=pcstats_path)
+    cases_module.reindex(
+        pcstats_cases, embedder=embedder, cache_path=pcstats_path.with_name("cases.embeddings.json")
+    )
+
+    match = cases_module.best_match_all_profiles("energie consommee par le pc", embedder=embedder)
+
+    assert match is not None
+    case, score, payload, profile = match
+    assert case["id"] == "energie"
+    assert profile == "pc-stats"
+    assert payload is None
+
+
+def test_best_match_all_profiles_falls_back_to_default_profile_none(monkeypatch, tmp_path):
+    monkeypatch.setattr(cases_module.Path, "home", staticmethod(lambda: tmp_path))
+    embedder = FakeEmbedder()
+
+    default_cases = [
+        {"id": "energie", "requests": ["energie consommee par le pc"], "script": "x"}
+    ]
+    default_path = tmp_path / ".shss" / "cases.json"
+    cases_module.save_cases(default_cases, path=default_path)
+    cases_module.reindex(default_cases, embedder=embedder, cache_path=default_path.with_name("cases.embeddings.json"))
+
+    match = cases_module.best_match_all_profiles("energie consommee par le pc", embedder=embedder)
+
+    assert match is not None
+    _case, _score, _payload, profile = match
+    assert profile is None  # la base par defaut, pas un profil nomme
+
+
 def test_discover_embedding_model_path_raises_with_helpful_message(monkeypatch, tmp_path):
     monkeypatch.delenv("SHSS_EMBED_MODEL_PATH", raising=False)
     monkeypatch.setattr(cases_module, "_discover_ollama_only", _raise_not_found)

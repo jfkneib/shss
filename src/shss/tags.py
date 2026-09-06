@@ -2,6 +2,8 @@ import contextlib
 import os
 import re
 
+from .history import log_line
+
 TAG_RE = re.compile(r"#@\s*(.*?)\s*@#", re.DOTALL)
 
 # "profil@" en tete du corps de la balise (#@pc-stats@ energie ... @#) :
@@ -52,9 +54,15 @@ def find_requests(line: str):
 
 def expand_line(line: str, resolver) -> str:
     """Replace every #@ ... @# tag in line with
-    resolver(request_text, text_before_tag, text_after_tag)."""
+    resolver(request_text, text_before_tag, text_after_tag).
+
+    Journalise aussi le texte brut de chaque balise (voir
+    history.log_line()) -- delimiteurs et prefixe de profil compris,
+    avant toute transformation -- point de passage commun au REPL et au
+    mode -c (les deux appellent expand_line())."""
 
     def _replace(m):
+        log_line(m.group(0))
         profile, request = _split_profile(m.group(1))
         with _profile_override(profile):
             return resolver(request, line[: m.start()], line[m.end() :])
@@ -69,12 +77,20 @@ def resolve_pending_tag(line: str, point: int, resolver):
 
     Returns (new_line, new_point). If there is nothing to resolve at or
     before `point`, returns (line, point) unchanged.
-    """
+
+    Journalise aussi le texte brut de la balise resolue (voir
+    history.log_line()) -- seul chemin possible pour l'integration
+    bashrc/Ctrl-G (shell-integration/shss.bash) : le process qui
+    resout la balise ici a deja quitte au moment ou bash execute la
+    ligne, aucun autre point de passage ne verra jamais cette
+    resolution-la (voir resolutions.py pour ce que ça implique pour le
+    journal riche)."""
     before = line[:point]
     after = line[point:]
 
     idx = before.rfind("#@")
     if idx != -1 and "@#" not in before[idx:]:
+        log_line(before[idx:])
         body = before[idx + 2 :].strip()
         profile, request = _split_profile(body)
         prefix = before[:idx]
@@ -91,6 +107,7 @@ def resolve_pending_tag(line: str, point: int, resolver):
     if last_match is None:
         return line, point
 
+    log_line(last_match.group(0))
     prefix = line[: last_match.start()]
     suffix = line[last_match.end() :]
     profile, request = _split_profile(last_match.group(1))

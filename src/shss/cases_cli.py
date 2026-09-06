@@ -387,7 +387,16 @@ def main(argv=None):
         # jamais mis en cache -- le modifier ici suffit pour toute la
         # duree de cet appel, sans toucher au shell appelant.
         os.environ["SHSS_CASES_PROFILE"] = args.profile
-    return args.func(args) or 0
+    try:
+        return args.func(args) or 0
+    except ValueError as exc:
+        # Filet de securite pour les sous-commandes qui ne
+        # l'attrapent pas elles-memes (ex: _cmd_list) -- couvre
+        # notamment un nom de profil invalide ou reserve (--profile
+        # all, voir cases.RESERVED_PROFILE_NAMES), qui remonte depuis
+        # cases._cases_path() au tout premier acces au store.
+        print(f"shss-cases: {exc}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":

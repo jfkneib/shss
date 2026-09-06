@@ -138,6 +138,36 @@ def discover_embedding_model_path(model=EMBED_MODEL_NAME, tag=EMBED_MODEL_TAG):
 
 _PROFILE_NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
+# "all" est reserve a #@all@ (voir tags.py, best_match_all_profiles()
+# ci-dessous) : une recherche a travers tous les profils installes,
+# jamais un vrai profil sur disque -- sinon un `shss-cases --profile
+# all add ...` tape par erreur creerait silencieusement
+# ~/.shss/profiles/all/, indiscernable du mot-cle. Refuse ici, au point
+# unique ou un nom de profil devient un chemin, pour bloquer aussi bien
+# la CLI que la GUI (les deux passent par _cases_path()).
+RESERVED_PROFILE_NAMES = {"all"}
+
+
+def _profile_root(profile: str = None) -> Path:
+    """Repertoire racine d'un profil : ~/.shss/ pour le profil par
+    defaut (`profile` None ou vide), ~/.shss/profiles/<profile>/ sinon.
+    Factorise entre _cases_path() (profil courant, via
+    SHSS_CASES_PROFILE) et best_match_all_profiles() (qui doit pouvoir
+    viser un profil precis sans passer par cette variable d'env)."""
+    if not profile:
+        return Path.home() / ".shss"
+    if not _PROFILE_NAME_RE.match(profile):
+        raise ValueError(
+            f"nom de profil invalide : {profile!r} "
+            "(lettres, chiffres, - et _ seulement)"
+        )
+    if profile in RESERVED_PROFILE_NAMES:
+        raise ValueError(
+            f"{profile!r} est un mot reserve (#@{profile}@ cherche dans tous "
+            "les profils installes) -- choisis un autre nom de profil"
+        )
+    return Path.home() / ".shss" / "profiles" / profile
+
 
 def _cases_path() -> Path:
     override = os.environ.get("SHSS_CASES_PATH")
@@ -152,15 +182,7 @@ def _cases_path() -> Path:
     # (SHSS_CASES_CACHE_PATH se deduit automatiquement de celle-ci,
     # voir _cache_path()).
     profile = os.environ.get("SHSS_CASES_PROFILE")
-    if profile:
-        if not _PROFILE_NAME_RE.match(profile):
-            raise ValueError(
-                f"SHSS_CASES_PROFILE invalide : {profile!r} "
-                "(lettres, chiffres, - et _ seulement)"
-            )
-        return Path.home() / ".shss" / "profiles" / profile / "cases.json"
-
-    return Path.home() / ".shss" / "cases.json"
+    return _profile_root(profile) / "cases.json"
 
 
 def profile_dir(cases_path: Path = None) -> Path:
@@ -176,6 +198,15 @@ def profile_dir(cases_path: Path = None) -> Path:
     avec un chemin code en dur vers ce depot, cassant des que lance
     d'ailleurs)."""
     return (cases_path or _cases_path()).parent
+
+
+def profile_dir_for(profile: str = None) -> Path:
+    """Comme profile_dir(), mais pour un profil precis plutot que le
+    profil courant (SHSS_CASES_PROFILE) -- necessaire pour #@all@ : le
+    cas retenu peut venir d'un profil different de celui actif dans le
+    shell (voire d'aucun), donc SHSS_PROFILE_DIR doit suivre le cas
+    reellement matche, pas la variable d'environnement en cours."""
+    return _profile_root(profile)
 
 
 def list_profiles():
@@ -532,13 +563,70 @@ def best_match(query, cases=None, cache=None, embedder=None, threshold=None):
     if not matches:
         return None
     case, score, _matched_request = matches[0]
-    if threshold is not None:
-        seuil = threshold
-    elif "threshold" in case:
-        seuil = case["threshold"]
-    else:
-        seuil = _threshold()
-    if score >= seuil:
+    if score >= _case_threshold(case, threshold):
         payload, _normalized = extract_payload(query)
         return case, score, payload
     return None
+
+
+def _case_threshold(case, threshold=None):
+    """Seuil applicable a `case` : `threshold` (argument explicite) en
+    priorite, puis case["threshold"], puis le seuil global -- factorise
+    entre best_match() et best_match_all_profiles() (meme regle de
+    priorite dans les deux, voir best_match())."""
+    if threshold is not None:
+        return threshold
+    if "threshold" in case:
+        return case["threshold"]
+    return _threshold()
+
+
+def best_match_all_profiles(query, embedder=None, threshold=None):
+    """Comme best_match(), mais cherche dans tous les profils installes
+    (list_profiles()) et la base par defaut, et garde le meilleur score
+    global plutot que de se limiter au profil courant
+    (SHSS_CASES_PROFILE). Retourne (cas, score, payload, profil) ou
+    None -- `profil` est None pour la base par defaut, sinon le nom du
+    profil d'ou vient le cas retenu.
+
+    Reserve a #@all@ (voir tags.py) : jamais utilise pour une
+    resolution ordinaire (`#@ demande @#` sans prefixe de profil).
+    Chaque profil separe reste le comportement par defaut -- c'est ce
+    qui reduit le risque de faux positif entre cas sans rapport (voir
+    docs/shss-cases.md section 7 : constate en pratique avec un cas SQL
+    qui matchait a tort une demande bash quelconque). #@all@ est une
+    echappatoire explicite : chercher partout reintroduit ce risque
+    pour cette demande precise, en connaissance de cause, jamais en
+    silence pour une demande ordinaire.
+
+    Un seul Embedder partage entre tous les profils testes (le modele
+    ne se recharge qu'une fois), mais la requete est reembeddee a
+    chaque profil (find_matches() ne prend pas de vecteur precalcule) --
+    negligeable au nombre de profils attendu (quelques-uns), a revoir
+    si ca devait un jour grossir beaucoup."""
+    shared_embedder = embedder
+    best = None  # (score, case, payload, profile)
+    for profile in [None] + list_profiles():
+        cases_path = _profile_root(profile) / "cases.json"
+        cases = load_cases(cases_path)
+        if not cases:
+            continue
+        cache = load_cache(_cache_path(cases_path))
+        if not cache or not cache.get("entries"):
+            continue
+        if shared_embedder is None:
+            shared_embedder = Embedder()
+        matches = find_matches(query, cases=cases, cache=cache, embedder=shared_embedder, top_k=1)
+        if not matches:
+            continue
+        case, score, _matched_request = matches[0]
+        if score < _case_threshold(case, threshold):
+            continue
+        if best is None or score > best[0]:
+            best = (score, case, profile)
+
+    if best is None:
+        return None
+    score, case, profile = best
+    payload, _normalized = extract_payload(query)
+    return case, score, payload, profile

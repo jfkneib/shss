@@ -230,17 +230,55 @@ Testé en réel — ça marche, avec les mêmes limites de fiabilité que le
 reste sur ce modèle 1.5B (le nom de fichier exact ou la structure des
 données peuvent légèrement s'écarter de la demande).
 
-Chaque résolution (fragment ou script) est enregistrée dans un
-historique JSON Lines, une ligne par entrée :
+Deux journaux distincts, séparés délibérément — une première version
+mélangeait tout dans un seul `history.jsonl`, et l'information utile
+(la demande réelle, quel profil) finissait noyée dans un champ
+`result` illisible (plusieurs variables d'env collées bout à bout avec
+le chemin du script), pas exploitable pour relire ce qui a été tapé :
 
-```bash
-./bin/shss --history        # les 20 dernières résolutions
-./bin/shss --history 50     # les 50 dernières
-```
+- **`~/.shss/history.jsonl`** (`SHSS_HISTORY_PATH`) — chaque balise
+  `#@ ... @#`, **telle que tapée**, délimiteurs et prefixe de profil
+  éventuel compris (ex : `#@pc-stats@ energie consommee par le pc @#`),
+  une ligne JSON par entrée (`timestamp`, `line`). Journalisé depuis un
+  seul point de passage partagé (`tags.py`), donc identique dans le
+  REPL, le mode `-c`, et l'intégration bashrc/`Ctrl-G` :
 
-Fichier : `~/.shss/history.jsonl` (surchargeable via
-`SHSS_HISTORY_PATH`). `--history` ne charge pas le modèle, donc c'est
-instantané, même sans GPU/CPU disponible.
+  ```bash
+  ./bin/shss --history        # les 20 dernières balises, telles quelles
+  ./bin/shss --history 50     # les 50 dernières
+  ```
+
+  `--history` ne charge pas le modèle, donc c'est instantané, même sans
+  GPU/CPU disponible.
+
+- **`~/.shss/resolutions.jsonl`** (`SHSS_RESOLUTIONS_PATH`) — ce que
+  shss en a réellement fait : `kind` (`case`/`script`/`inline`/
+  `builtin`), le résultat résolu, et pour un cas curaté réutilisé (voir
+  `docs/shss-cases.md`) aussi `score`, `case_id` et `profile` (`null`
+  pour la base par défaut, un nom de profil sinon — le profil dont
+  vient réellement le cas, qui peut différer de `SHSS_CASES_PROFILE`
+  avec `#@all@`).
+
+  **Ce qui a réellement tourné** : dans le REPL et en mode `-c` (pas via
+  l'intégration bashrc/`Ctrl-G`), une ligne résolue est suivie d'une
+  entrée `kind: "execution"` — code de sortie réel et sortie (tronquée,
+  `SHSS_RESOLUTIONS_OUTPUT_MAX_CHARS`, 4000 caractères par défaut) de
+  la commande effectivement exécutée. Ce que shss a proposé et ce qui
+  s'est réellement passé sont deux choses différentes ; seule cette
+  entrée répond à la seconde. Impossible via `Ctrl-G`/bashrc : le
+  process `shss-resolve-inline`, qui ne fait que résoudre la balise, a
+  déjà quitté au moment où bash exécute la ligne — aucun moyen de
+  remonter le résultat depuis ce côté-là. Pas de commande dédiée pour
+  lire ce fichier pour l'instant — `cat`/`jq` directement.
+
+**Avis explicite** : `#@ feedback bon @#` ou `#@ feedback mauvais
+[commentaire libre] @#` juste après une résolution, dans n'importe quel
+mode (REPL, `-c`, bashrc/`Ctrl-G` y compris — celui-ci ne dépend pas
+d'une exécution, contrairement aux entrées `"execution"` ci-dessus) —
+le seul signal fiable pour savoir si un cas curaté vaut vraiment la
+peine d'être gardé, rien ici ne déduit la satisfaction automatiquement.
+Journalisé comme une entrée `kind: "feedback"` dans
+`resolutions.jsonl`, qui référence la résolution visée (`about`).
 
 ## 9. Commandes utilitaires et sélecteur de modèle
 
@@ -254,6 +292,8 @@ chargement du modèle) :
 ./bin/shss -c '#@ model 3b @#'               # change de modèle
 ./bin/shss -c '#@ model download 3b @#'      # télécharge un modèle curaté
 ./bin/shss -c '#@ history 5 @#'              # équivalent de --history 5
+./bin/shss -c '#@ feedback bon @#'           # note la resolution precedente comme satisfaisante
+./bin/shss -c '#@ feedback mauvais trop lent @#'  # ...ou pas, avec un commentaire libre optionnel
 ./bin/shss -c '#@ help @#'                   # rappelle ces commandes
 ```
 
@@ -352,8 +392,9 @@ src/shss/
   inline.py                résolution ponctuelle appelée par bin/shss-resolve-inline
   tags.py                  regex #@ ... @#, expand_line(), resolve_pending_tag()
   llm.py                   modèle GGUF, prompt, dispatch fragment/script, liste modèles
-  commands.py              commandes utilitaires (models, model, history, help)
-  history.py               journal JSONL des résolutions (~/.shss/history.jsonl)
+  commands.py              commandes utilitaires (models, model, history, feedback, help)
+  history.py               journal JSONL de la ligne #@ ... @# brute (~/.shss/history.jsonl)
+  resolutions.py           journal JSONL des résolutions/exécutions/avis (~/.shss/resolutions.jsonl)
   context.py               aperçu des fichiers mentionnés, injecté dans le prompt caché
   shell.py                 session bash persistante (subprocess + marqueur sentinel)
 requirements.txt           dépendances Python : llama-cpp-python, prompt_toolkit
@@ -369,7 +410,8 @@ Le rôle précis de chaque fichier :
   `python -m shss.inline`. Appelé par `shell-integration/shss.bash` à
   chaque `Ctrl-G`, avec la ligne courante et la position du curseur en
   arguments.
-- **`src/shss/tags.py`** — logique pure, sans I/O :
+- **`src/shss/tags.py`** — logique de parsing des balises, plus un seul
+  effet de bord volontaire (`history.log_line()`, voir plus bas) :
   - `TAG_RE` = la regex `#@\s*(.*?)\s*@#`.
   - `find_requests(line)` — liste les demandes présentes dans une ligne.
   - `expand_line(line, resolver)` — remplace **toutes** les balises
@@ -377,6 +419,11 @@ Le rôle précis de chaque fichier :
   - `resolve_pending_tag(line, point, resolver)` — trouve la **dernière**
     balise ouverte avant le curseur et la résout (utilisé par `Ctrl-G`,
     dans le REPL comme dans l'intégration bash).
+  - Les deux journalisent le texte brut de chaque balise résolue
+    (`history.log_line()`, délimiteurs et préfixe de profil compris)
+    avant tout le reste — seul point de passage commun aux trois modes
+    d'invocation (REPL, `-c`, bashrc/`Ctrl-G`), donc le seul endroit où
+    ce journal peut vivre sans dupliquer la logique trois fois.
 - **`src/shss/llm.py`** :
   - `discover_gguf_path()` — cherche le fichier `.gguf` déjà téléchargé
     par Ollama, en lisant son manifest JSON. Voir "Configuration"
@@ -399,7 +446,7 @@ Le rôle précis de chaque fichier :
     `confirm` est fourni, l'appelle avec ce texte ; un retour faux lève
     `ResolutionCancelled` (rien n'est écrit ni journalisé). Sinon, écrit le
     script via `_write_script()` dans `SCRIPT_DIR` (`/tmp/shss-<uid>/`)
-    et journalise le résultat via `history.log_event()`.
+    et journalise le résultat via `resolutions.log_event()`.
   - `ResolutionCancelled` — exception levée quand `confirm` refuse ;
     attrapée par `cli.py`/`inline.py` pour laisser la ligne inchangée.
   - `list_local_models()` — parcourt `_KNOWN_OLLAMA_DIRS` et liste tous
@@ -409,15 +456,50 @@ Le rôle précis de chaque fichier :
     `self.model_path` via `discover_gguf_path()` (ou un chemin direct) et
     vide `self._llm` pour forcer un rechargement lazy au prochain appel.
 - **`src/shss/commands.py`** — `try_builtin(request, mini_llm)` :
-  reconnaît `models`, `model <tag>`, `history [N]`, `help` (insensible à
-  la casse) et retourne le texte à afficher, ou `None` si `request` n'est
-  pas une commande connue (le flux normal vers le LLM reprend alors).
+  reconnaît `models`, `model <tag>`, `history [N]`, `feedback bon`,
+  `feedback mauvais [commentaire]`, `help` (insensible à la casse) et
+  retourne le texte à afficher, ou `None` si `request` n'est pas une
+  commande connue (le flux normal vers le LLM reprend alors).
   Volontairement du texte pur, jamais de picker interactif à navigation
   clavier ici — voir section 9 pour pourquoi (et où ce picker existe
-  quand même, côté bash, via `fzf`).
-- **`src/shss/history.py`** — `log_event(...)` ajoute une ligne JSON à
-  `~/.shss/history.jsonl` (ou `SHSS_HISTORY_PATH`) ; `read_events(limit)`
-  relit les dernières entrées, utilisé par `cli.py --history`.
+  quand même, côté bash, via `fzf`). `feedback ...` appelle
+  `resolutions.log_feedback()` comme effet de bord (avant même que ce
+  builtin ne soit lui-même journalisé, comme n'importe quel autre, dans
+  `history.jsonl` cette fois) puis confirme sur quelle demande l'avis
+  porte. `history [N]` lit `history.py` (voir plus bas), pas
+  `resolutions.py`.
+- **`src/shss/history.py`** — le journal brut, voir section 8 :
+  - `log_line(line)` — ajoute une ligne JSON (`timestamp`, `line`) à
+    `~/.shss/history.jsonl` (ou `SHSS_HISTORY_PATH`) — `line` est le
+    texte brut d'une balise `#@ ... @#` (délimiteurs et préfixe de
+    profil compris), jamais retouché. Seul appelant : `tags.py`.
+  - `read_lines(limit)` — relit les dernières entrées, utilisé par
+    `cli.py --history` et `#@ history @#`.
+  - `format_line(e)` — une ligne lisible par humain (`timestamp` +
+    texte brut), partagée entre les deux.
+- **`src/shss/resolutions.py`** — le journal riche, voir section 8 :
+  - `log_event(request, prefix, suffix, result, kind, *, score=None,
+    case_id=None, profile=None)` — ajoute une ligne JSON à
+    `~/.shss/resolutions.jsonl` (ou `SHSS_RESOLUTIONS_PATH`). Les trois
+    arguments nommés ne sont écrits que pour `kind="case"` (voir
+    `llm.py`) — `profile` peut valoir `None` (base par défaut) et est
+    quand même écrit explicitement (`null`), jamais omis, pour rester
+    traçable même via `#@all@`.
+  - `log_execution(line, expanded, output, code)` — une entrée
+    `kind="execution"` séparée, appelée par `cli.py` après
+    `PersistentShell.run()` (REPL/`-c` seulement, jamais depuis
+    l'intégration bashrc — voir section 8). `output` tronqué à
+    `SHSS_RESOLUTIONS_OUTPUT_MAX_CHARS` (4000 par défaut).
+  - `log_feedback(feedback, comment="")` — une entrée `kind="feedback"`,
+    référençant la dernière résolution réelle (ignore les entrées
+    `execution`/`feedback` précédentes, y compris un builtin `feedback
+    ...` antérieur) ; ne journalise rien et retourne `None` si le
+    journal est encore vide.
+  - `read_events(limit)` — relit les dernières entrées (`limit=None` :
+    tout le journal, utilisé par `log_feedback()`). Pas de commande
+    dédiée pour l'instant — lecture directe du fichier.
+  - `format_event(e)` — une ligne lisible par humain quel que soit le
+    `kind`, pour une lecture rapide de `resolutions.jsonl`.
 - **`src/shss/context.py`** — `build_context(request)` : repère les
   noms de fichiers plausibles dans la demande (regex), et pour ceux qui
   existent vraiment sur disque, ajoute un aperçu (5 lignes / 300
@@ -444,8 +526,11 @@ Le rôle précis de chaque fichier :
   bloque via `input()` en toute sécurité pendant ce laps de temps.
   `ResolutionCancelled` y est attrapée pour laisser le buffer inchangé si
   l'utilisateur refuse ; dans ce cas rien n'a encore été écrit ni
-  journalisé, puisque `confirm` est appelée par `generate_bash` avant
-  d'écrire le script ou d'appeler `history.log_event()`.
+  journalisé dans `resolutions.jsonl`, puisque `confirm` est appelée
+  par `generate_bash` avant d'écrire le script ou d'appeler
+  `resolutions.log_event()`. `history.jsonl`, lui, a déjà reçu la ligne
+  brute avant même l'appel à `generate_bash` (voir `tags.py`) — un
+  refus n'efface pas le fait que la balise a été tapée.
 - **`src/shss/inline.py`** — variante non-interactive de la résolution
   `Ctrl-G`, utilisée par `bin/shss-resolve-inline` (appelé depuis
   `shell-integration/shss.bash`). Ne demande **jamais** de confirmation
@@ -476,7 +561,9 @@ Tout se fait par variables d'environnement, pas de fichier de config :
 | `SHSS_MODEL_NAME` | Nom du modèle Ollama à chercher si `SHSS_MODEL_PATH` n'est pas défini | `qwen2.5-coder` |
 | `SHSS_MODEL_TAG` | Tag du modèle Ollama à chercher | `1.5b-base` |
 | `OLLAMA_MODELS` | Dossier où Ollama range ses modèles, utilisé par la recherche automatique | (voir ci-dessous) |
-| `SHSS_HISTORY_PATH` | Chemin du fichier d'historique JSON Lines | `~/.shss/history.jsonl` |
+| `SHSS_HISTORY_PATH` | Chemin du journal brut (balises telles que tapées) | `~/.shss/history.jsonl` |
+| `SHSS_RESOLUTIONS_PATH` | Chemin du journal riche (score/cas/exécution/avis) | `~/.shss/resolutions.jsonl` |
+| `SHSS_RESOLUTIONS_OUTPUT_MAX_CHARS` | Troncature de la sortie dans une entrée `kind="execution"` | `4000` |
 
 Sans `SHSS_MODEL_PATH`, `discover_gguf_path()` (dans `llm.py`) cherche le
 manifest `registry.ollama.ai/library/<name>/<tag>` dans, dans l'ordre :

@@ -4,6 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from shss.history import read_lines
 from shss.tags import expand_line, find_requests, resolve_pending_tag
 
 
@@ -156,3 +157,36 @@ def test_resolve_pending_tag_keeps_suffix_after_cursor():
     new_line, new_point = resolve_pending_tag(line, point, _upper_resolver)
     assert new_line == "ls TRIE PAR TAILLE -a"
     assert new_point == len("ls TRIE PAR TAILLE")
+
+
+def test_expand_line_logs_the_raw_tag_text_including_profile_prefix():
+    expand_line("#@pc-stats@ energie consomee par le pc @#", _upper_resolver)
+
+    events = read_lines(limit=1)
+    assert events[0]["line"] == "#@pc-stats@ energie consomee par le pc @#"
+
+
+def test_expand_line_logs_each_tag_separately():
+    expand_line("echo #@ un @# et #@ deux @#", _upper_resolver)
+
+    events = read_lines(limit=2)
+    assert [e["line"] for e in events] == ["#@ un @#", "#@ deux @#"]
+
+
+def test_resolve_pending_tag_logs_the_raw_text_for_a_closed_tag():
+    line = "ls #@pc-stats@ trie par taille @#"
+    resolve_pending_tag(line, len(line), _upper_resolver)
+
+    events = read_lines(limit=1)
+    assert events[0]["line"] == "#@pc-stats@ trie par taille @#"
+
+
+def test_resolve_pending_tag_logs_the_raw_text_for_a_still_open_tag():
+    # Ctrl-G peut resoudre une balise pas encore fermee (pas de '@#'
+    # tape) -- la ligne journalisee doit refleter exactement ca, sans
+    # inventer de fermeture qui n'a jamais ete tapee.
+    line = "ls #@pc-stats@ trie par taille"
+    resolve_pending_tag(line, len(line), _upper_resolver)
+
+    events = read_lines(limit=1)
+    assert events[0]["line"] == "#@pc-stats@ trie par taille"

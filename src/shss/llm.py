@@ -8,7 +8,7 @@ import uuid
 from pathlib import Path
 
 from .context import build_context
-from .history import log_event
+from .resolutions import log_event
 
 MODEL_NAME = os.environ.get("SHSS_MODEL_NAME", "qwen2.5-coder")
 MODEL_TAG = os.environ.get("SHSS_MODEL_TAG", "1.5b-base")
@@ -459,9 +459,25 @@ class MiniLLM:
             log_event(request, prefix, suffix, result, "builtin")
             return result
 
-        from .cases import best_match
+        from .cases import best_match, best_match_all_profiles
 
-        match = best_match(request)
+        # SHSS_CASES_PROFILE=all (mot reserve, voir tags.py et
+        # cases.RESERVED_PROFILE_NAMES) : #@all@ demande explicitement
+        # de chercher dans tous les profils installes plutot que le
+        # seul profil courant -- une echappatoire volontaire, jamais le
+        # comportement par defaut (voir best_match_all_profiles()).
+        # `matched_profile` suit le cas reellement retenu (None = base
+        # par defaut), pas la variable d'environnement : avec #@all@,
+        # le profil d'origine peut differer de SHSS_CASES_PROFILE.
+        searching_all = os.environ.get("SHSS_CASES_PROFILE") == "all"
+        if searching_all:
+            match_all = best_match_all_profiles(request)
+            match = match_all[:3] if match_all is not None else None
+            matched_profile = match_all[3] if match_all is not None else None
+        else:
+            match = best_match(request)
+            matched_profile = os.environ.get("SHSS_CASES_PROFILE")
+
         if match is not None:
             case, score, payload = match
             stdin_mode = case.get("input") == "stdin" and payload is not None
@@ -472,6 +488,12 @@ class MiniLLM:
             # que la confiance du match soit toujours visible, pas
             # seulement en testant a part.
             header = f"# cas « {case['id']} » ({score * 100:.1f}% de similarité)"
+            if searching_all:
+                # Seul #@all@ a besoin de le preciser : dans tous les
+                # autres cas, le profil est deja celui que l'utilisateur
+                # a lui-meme choisi (env var ou prefixe #@profil@),
+                # inutile de le repeter a chaque resolution.
+                header += f", profil {matched_profile or 'défaut'}"
 
             # Au-dela d'un seuil de confiance ET d'une longueur de
             # script, l'apercu se contente d'un resume plutot que le
@@ -501,7 +523,7 @@ class MiniLLM:
             script_path = _write_script(case["script"])
             import shlex
 
-            from .cases import profile_dir
+            from .cases import profile_dir_for
 
             # Contexte toujours disponible pour un cas qui matche, par
             # convention, via des variables d'environnement -- jamais
@@ -514,21 +536,24 @@ class MiniLLM:
             #   SHSS_SUFFIX      le bash apres la balise sur la ligne
             #   SHSS_MATCH_SCORE score de similarite qui a fait matcher ce cas
             #   SHSS_CASE_ID     l'identifiant du cas
-            #   SHSS_PROFILE_DIR repertoire du profil courant (~/.shss/ ou
+            #   SHSS_PROFILE_DIR repertoire du profil dont vient le cas
+            #                    retenu (~/.shss/ ou
             #                    ~/.shss/profiles/<nom>/) -- permet a un cas
             #                    d'appeler un script range a cote (sous
             #                    scripts/, par convention) sans coder de
             #                    chemin en dur vers un clone git precis :
             #                    ce repertoire, lui, est garanti present
             #                    partout ou le profil a ete installe. Voir
-            #                    profiles/pc-stats/README.md.
+            #                    profiles/pc-stats/README.md. Suit
+            #                    `matched_profile`, pas SHSS_CASES_PROFILE :
+            #                    avec #@all@ les deux peuvent differer.
             env_vars = {
                 "SHSS_REQUEST": request,
                 "SHSS_PREFIX": prefix,
                 "SHSS_SUFFIX": suffix,
                 "SHSS_MATCH_SCORE": f"{score:.4f}",
                 "SHSS_CASE_ID": case["id"],
-                "SHSS_PROFILE_DIR": str(profile_dir()),
+                "SHSS_PROFILE_DIR": str(profile_dir_for(matched_profile)),
             }
             env_prefix = "".join(f"{name}={shlex.quote(value)} " for name, value in env_vars.items())
             if stdin_mode:
@@ -539,7 +564,10 @@ class MiniLLM:
             else:
                 result = f"{env_prefix}{script_path}"
 
-            log_event(request, prefix, suffix, result, "case")
+            log_event(
+                request, prefix, suffix, result, "case",
+                score=score, case_id=case["id"], profile=matched_profile,
+            )
             return result
 
         self._ensure_loaded()

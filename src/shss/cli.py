@@ -110,43 +110,70 @@ def repl(llm: MiniLLM) -> int:
                 break
 
             expanded = expand_line(line, resolver)
-            if expanded != line:
+            resolved = expanded != line
+
+            if resolved:
                 print(f"→ {expanded}")
 
-            output, _ = shell.run(expanded)
+            output, code = shell.run(expanded)
             if output:
                 print(output, end="")
+
+            if resolved:
+                _log_execution(line, expanded, output, code)
     finally:
         shell.close()
 
     return 0
 
 
+def _log_execution(line: str, expanded: str, output: str, code: int) -> None:
+    """Journalise le resultat reel de l'execution -- seulement quand
+    la ligne contenait au moins une balise resolue (`expanded != line`) :
+    une commande bash ordinaire, sans rapport avec shss, n'a rien a
+    faire dans un historique cense servir a evaluer ses propres
+    suggestions. Couvre le REPL et le mode -c (run_once()) -- ne
+    couvre PAS l'integration bashrc/Ctrl-G (shell-integration/
+    shss.bash) : la, le process shss (`bin/shss-resolve-inline`) a
+    deja rendu la main et quitte avant que bash execute la ligne,
+    aucun moyen de recuperer son resultat depuis ce cote-la sans un
+    mecanisme separe (PROMPT_COMMAND cote bash) -- pas fait ici."""
+    from .resolutions import log_execution
+
+    log_execution(line, expanded, output, code)
+
+
 def run_once(llm: MiniLLM, line: str) -> int:
     shell = PersistentShell()
     try:
         expanded = expand_line(line, _resolver_with_display(llm))
-        if expanded != line:
+        resolved = expanded != line
+
+        if resolved:
             print(f"→ {expanded}")
+
         output, code = shell.run(expanded)
         if output:
             print(output, end="")
+
+        if resolved:
+            _log_execution(line, expanded, output, code)
+
         return code
     finally:
         shell.close()
 
 
 def print_history(limit: int) -> int:
-    from .history import read_events
+    from .history import format_line, read_lines
 
-    events = read_events(limit)
+    events = read_lines(limit)
     if not events:
         print("shss: historique vide")
         return 0
 
     for e in events:
-        arrow = f"{e['request']!r} -> {e['result']!r}"
-        print(f"[{e['timestamp']}] {e['kind']:6} {arrow}")
+        print(format_line(e))
     return 0
 
 

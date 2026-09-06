@@ -14,7 +14,8 @@ import re
 from pathlib import Path
 
 from . import llm as llm_module
-from .history import read_events
+from .history import format_line, read_lines
+from .resolutions import log_feedback
 
 # Un spec de modele : "nom" ou "nom:tag", chaque partie faite de
 # lettres/chiffres/._- (convention Ollama). Sert de garde-fou : une
@@ -37,7 +38,10 @@ HELP_TEXT = """Commandes utilitaires shss (traitees directement, sans appeler le
   #@ model <tag> @#        change de modele pour la suite de cette session
                             (ex: model 3b, ou model deepseek-coder:1.3b)
   #@ model download <tag> @#  telecharge un modele curate (sans Ollama)
-  #@ history [N] @#        affiche les N dernieres resolutions (defaut 20)
+  #@ history [N] @#        affiche les N dernieres balises tapees, telles quelles (defaut 20)
+  #@ feedback bon @#       note la derniere resolution comme satisfaisante
+  #@ feedback mauvais [commentaire] @#  note-la comme insatisfaisante,
+                            avec un commentaire libre optionnel
   #@ help @#               affiche cette aide"""
 
 
@@ -151,13 +155,27 @@ def _format_switch_model(mini_llm, target: str) -> str:
 
 
 def _format_history(limit: int) -> str:
-    events = read_events(limit)
+    events = read_lines(limit)
     if not events:
         return "Historique vide."
-    lines = []
-    for e in events:
-        lines.append(f"[{e['timestamp']}] {e['kind']:6} {e['request']!r} -> {e['result']!r}")
-    return "\n".join(lines)
+    return "\n".join(format_line(e) for e in events)
+
+
+# "bon"/"mauvais" plutot que juste "oui"/"non" ou un pouce en emoji :
+# un mot difficile a taper par erreur au tout debut d'une vraie demande
+# de generation bash (contrairement a un mot comme "trouve" ou "liste").
+# Quelques orthographes tolerees, comme pour models/model plus haut.
+_FEEDBACK_GOOD_WORDS = ("bon", "bien", "good")
+_FEEDBACK_BAD_WORDS = ("mauvais", "mal", "bad")
+
+
+def _format_feedback(feedback: str, comment: str) -> str:
+    about = log_feedback(feedback, comment)
+    if about is None:
+        return "shss: historique vide -- rien a noter pour l'instant."
+    request = about.get("request")
+    detail = f" sur : {request!r}" if request else ""
+    return f"shss: avis « {feedback} » enregistre{detail}."
 
 
 # "models" (liste) et "model" (changement) sont proches -- accepter les
@@ -199,6 +217,23 @@ def try_builtin(request: str, mini_llm):
         parts = cmd.split()
         limit = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 20
         return _format_history(limit)
+
+    if head_lower == "feedback":
+        if not rest:
+            return (
+                "shss: precise un avis -- #@ feedback bon @#  ou  "
+                "#@ feedback mauvais [commentaire] @#"
+            )
+        sub, _, comment = rest.partition(" ")
+        sub_lower = sub.lower()
+        comment = comment.strip()
+        if sub_lower in _FEEDBACK_GOOD_WORDS:
+            return _format_feedback("bon", comment)
+        if sub_lower in _FEEDBACK_BAD_WORDS:
+            return _format_feedback("mauvais", comment)
+        return (
+            f"shss: « {sub} » non reconnu -- feedback bon / feedback mauvais [commentaire]"
+        )
 
     if lower in ("help", "aide", "?"):
         return HELP_TEXT
