@@ -354,6 +354,42 @@ def test_update_case_can_set_and_clear_input_mode():
     assert "input" not in cleared[0]
 
 
+def test_add_case_with_danger_level():
+    cases = cases_module.add_case([], "tuer-tout", ["x"], "echo x", danger=2)
+    assert cases[0]["danger"] == 2
+
+
+def test_add_case_without_danger_omits_the_field():
+    cases = cases_module.add_case([], "fix", ["x"], "echo x")
+    assert "danger" not in cases[0]
+
+
+def test_add_case_rejects_invalid_danger_level():
+    try:
+        cases_module.add_case([], "fix", ["x"], "echo x", danger=5)
+        assert False, "devrait lever ValueError"
+    except ValueError:
+        pass
+
+
+def test_update_case_can_set_and_clear_danger():
+    cases = [{"id": "fix", "requests": ["x"], "script": "echo x"}]
+    updated = cases_module.update_case(cases, "fix", danger=1)
+    assert updated[0]["danger"] == 1
+
+    cleared = cases_module.update_case(updated, "fix", danger="")
+    assert "danger" not in cleared[0]
+
+
+def test_update_case_rejects_invalid_danger_level():
+    cases = [{"id": "fix", "requests": ["x"], "script": "echo x"}]
+    try:
+        cases_module.update_case(cases, "fix", danger=9)
+        assert False, "devrait lever ValueError"
+    except ValueError:
+        pass
+
+
 def test_template_case_matches_regardless_of_quoted_content(monkeypatch, tmp_path):
     _setup_paths(monkeypatch, tmp_path)
 

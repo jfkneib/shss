@@ -101,6 +101,36 @@ def test_cmd_edit_clear_threshold_removes_field(monkeypatch, tmp_path):
     assert "threshold" not in cases_module.load_cases()[0]
 
 
+def test_cmd_add_danger_flag_sets_field(monkeypatch, tmp_path):
+    _setup_paths(monkeypatch, tmp_path)
+    args = cli_module.build_parser().parse_args(
+        ["add", "tuer-tout", "--request", "x", "--danger", "2"]
+    )
+    monkeypatch.setattr(sys, "stdin", io.StringIO("#!/usr/bin/env bash\n"))
+
+    assert cli_module._cmd_add(args) == 0
+    assert cases_module.load_cases()[0]["danger"] == 2
+
+
+def test_cmd_add_rejects_out_of_range_danger(monkeypatch, tmp_path, capsys):
+    _setup_paths(monkeypatch, tmp_path)
+    parser = cli_module.build_parser()
+    try:
+        parser.parse_args(["add", "fix", "--request", "x", "--danger", "9"])
+        assert False, "argparse devrait rejeter une valeur hors choix"
+    except SystemExit:
+        pass
+
+
+def test_cmd_edit_clear_danger_removes_field(monkeypatch, tmp_path):
+    _setup_paths(monkeypatch, tmp_path)
+    cases_module.save_cases([{"id": "fix", "requests": ["x"], "script": "echo x", "danger": 2}])
+
+    args = cli_module.build_parser().parse_args(["edit", "fix", "--clear-danger"])
+    assert cli_module._cmd_edit(args) == 0
+    assert "danger" not in cases_module.load_cases()[0]
+
+
 def test_cmd_reindex_missing_embedding_model_gives_friendly_error(monkeypatch, tmp_path, capsys):
     _setup_paths(monkeypatch, tmp_path)
     cases_module.save_cases([{"id": "x", "requests": ["une demande"], "script": "echo x"}])

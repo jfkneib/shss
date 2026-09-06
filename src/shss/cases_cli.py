@@ -61,6 +61,8 @@ def _cmd_list(args):
             tags.append("gabarit")
         if "threshold" in case:
             tags.append(f"seuil={case['threshold']}")
+        if "danger" in case:
+            tags.append(f"danger={case['danger']}")
         suffix = f"  [{', '.join(tags)}]" if tags else ""
         print(f"{case['id']:<24} {requests[0]}{suffix}")
         for extra in requests[1:]:
@@ -87,6 +89,7 @@ def _cmd_add(args):
             note=args.note or "",
             input_mode="stdin" if args.stdin else None,
             threshold=args.threshold,
+            danger=args.danger,
         )
     except ValueError as exc:
         print(f"shss-cases: {exc}", file=sys.stderr)
@@ -119,6 +122,12 @@ def _cmd_edit(args):
     elif args.clear_threshold:
         threshold = ""
 
+    danger = None
+    if args.danger is not None:
+        danger = args.danger
+    elif args.clear_danger:
+        danger = ""
+
     try:
         cases = cases_module.update_case(
             cases,
@@ -128,9 +137,13 @@ def _cmd_edit(args):
             note=args.note,
             input_mode=input_mode,
             threshold=threshold,
+            danger=danger,
         )
     except KeyError:
         print(f"shss-cases: aucun cas « {args.id} » (utilise 'add' pour en creer un)", file=sys.stderr)
+        return 1
+    except ValueError as exc:
+        print(f"shss-cases: {exc}", file=sys.stderr)
         return 1
 
     cases_module.save_cases(cases)
@@ -142,6 +155,7 @@ def _cmd_edit(args):
             ("note", args.note),
             ("gabarit", input_mode),
             ("seuil", threshold),
+            ("danger", danger),
         )
         if value is not None
     ]
@@ -295,6 +309,17 @@ def build_parser():
             "(voir 'shss-cases test' pour verifier avant de choisir)"
         ),
     )
+    p_add.add_argument(
+        "--danger",
+        type=int,
+        choices=cases_module.DANGER_LEVELS,
+        help=(
+            "coefficient de danger : 0 lecture seule (defaut si omis), "
+            "1 modifie quelque chose de reversible/limite, 2 destructif ou "
+            "irreversible -- purement informatif pour l'instant, rien ne s'en "
+            "sert encore"
+        ),
+    )
     p_add.set_defaults(func=_cmd_add)
 
     p_edit = sub.add_parser(
@@ -322,6 +347,10 @@ def build_parser():
     p_edit.add_argument(
         "--clear-threshold", action="store_true", help="retire le seuil propre a ce cas (retour au seuil global)"
     )
+    p_edit.add_argument(
+        "--danger", type=int, choices=cases_module.DANGER_LEVELS, help="fixe le coefficient de danger (0/1/2)"
+    )
+    p_edit.add_argument("--clear-danger", action="store_true", help="retire le coefficient de danger")
     p_edit.set_defaults(func=_cmd_edit)
 
     p_remove = sub.add_parser("remove", help="retire un cas")

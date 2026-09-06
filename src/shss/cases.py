@@ -263,7 +263,27 @@ def _find_case(cases, case_id):
     return None
 
 
-def add_case(cases, case_id, requests, script, note="", input_mode=None, threshold=None):
+# Coefficient de danger d'un cas (cle "danger") : facultatif, absent =
+# 0 implicite (comme threshold absent = seuil global). Purement
+# informatif pour l'instant -- aucun mecanisme ne s'en sert encore
+# (avertissement, confirmation renforcee...), juste une base a
+# remplir des maintenant pour decider plus tard COMMENT s'en servir :
+#   0 -- lecture seule, aucun effet de bord (ex : gs-grep, pc-power)
+#   1 -- modifie quelque chose, mais porte limitee/reversible
+#        (ex : tmux-tuer-session -- une session precise, pas le serveur)
+#   2 -- destructif ou irreversible, ou porte large
+#        (ex : tmux-tuer-tout -- kill-server, tout y passe)
+DANGER_LEVELS = (0, 1, 2)
+
+
+def _validate_danger(danger):
+    if danger is not None and danger not in DANGER_LEVELS:
+        raise ValueError(
+            f"danger invalide : {danger!r} (un entier parmi {DANGER_LEVELS})"
+        )
+
+
+def add_case(cases, case_id, requests, script, note="", input_mode=None, threshold=None, danger=None):
     """Retourne une nouvelle liste avec `case_id` ajoute. Leve
     ValueError si l'id existe deja -- on modifie/retire explicitement
     un cas curate, on ne l'ecrase jamais silencieusement.
@@ -281,13 +301,17 @@ def add_case(cases, case_id, requests, script, note="", input_mode=None, thresho
     souvent que le gabarit de phrase ("corrige ... : \"...\"") pour
     distinguer un cas d'un autre -- constate en pratique, plusieurs
     demandes sans rapport (traduire, compter des mots...) peuvent
-    quand meme depasser un seuil generique."""
+    quand meme depasser un seuil generique.
+
+    `danger` : coefficient de danger (0/1/2, voir DANGER_LEVELS), pour
+    l'instant purement informatif -- rien ne s'en sert encore."""
     if _find_case(cases, case_id) is not None:
         raise ValueError(f"un cas « {case_id} » existe deja")
     if not requests:
         raise ValueError("il faut au moins une formulation d'exemple (--request)")
     if input_mode not in (None, "stdin"):
         raise ValueError(f"input invalide : {input_mode!r} (seul 'stdin' est reconnu)")
+    _validate_danger(danger)
     case = {"id": case_id, "requests": list(requests), "script": script}
     if note:
         case["note"] = note
@@ -295,6 +319,8 @@ def add_case(cases, case_id, requests, script, note="", input_mode=None, thresho
         case["input"] = input_mode
     if threshold is not None:
         case["threshold"] = float(threshold)
+    if danger is not None:
+        case["danger"] = danger
     return cases + [case]
 
 
@@ -306,7 +332,9 @@ def remove_case(cases, case_id):
     return [c for c in cases if c["id"] != case_id]
 
 
-def update_case(cases, case_id, requests=None, script=None, note=None, input_mode=None, threshold=None):
+def update_case(
+    cases, case_id, requests=None, script=None, note=None, input_mode=None, threshold=None, danger=None
+):
     """Retourne une nouvelle liste avec `case_id` mis a jour en place
     (position preservee dans la liste) -- seuls les champs fournis
     (non None) sont remplaces, les autres restent tels quels. Leve
@@ -318,11 +346,17 @@ def update_case(cases, case_id, requests=None, script=None, note=None, input_mod
     comme les autres champs).
 
     `threshold` : un float pour fixer le seuil propre a ce cas, "" pour
-    le retirer (retour au seuil global), None pour laisser tel quel."""
+    le retirer (retour au seuil global), None pour laisser tel quel.
+
+    `danger` : un entier (0/1/2, voir DANGER_LEVELS) pour fixer le
+    coefficient de danger, "" pour le retirer, None pour laisser tel
+    quel."""
     if _find_case(cases, case_id) is None:
         raise KeyError(case_id)
     if input_mode not in (None, "", "stdin"):
         raise ValueError(f"input invalide : {input_mode!r} (seul 'stdin' est reconnu)")
+    if danger not in (None, ""):
+        _validate_danger(danger)
 
     def _updated(case):
         if case["id"] != case_id:
@@ -344,6 +378,11 @@ def update_case(cases, case_id, requests=None, script=None, note=None, input_mod
                 new_case.pop("threshold", None)
             else:
                 new_case["threshold"] = float(threshold)
+        if danger is not None:
+            if danger == "":
+                new_case.pop("danger", None)
+            else:
+                new_case["danger"] = danger
         return new_case
 
     return [_updated(c) for c in cases]

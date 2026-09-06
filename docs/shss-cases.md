@@ -161,6 +161,21 @@ défaut), le texte entier n'est **pas** affiché — juste un résumé
 raccourci, pour ne pas noyer l'écran avec un script de plusieurs
 centaines de lignes à chaque résolution.
 
+### Coefficient de danger (schéma seulement, pour l'instant)
+
+`--danger {0,1,2}` sur `add`/`edit` (`--clear-danger` pour le retirer) :
+0 lecture seule (implicite si absent), 1 modifie quelque chose de
+réversible/limité (ex : `tmux-tuer-session` — une session précise), 2
+destructif ou irréversible, ou de portée large (ex : `tmux-tuer-tout` —
+`kill-server`, tout y passe). Stocké dans le cas (`"danger": N`),
+affiché par `shss-cases list` (`[danger=N]`).
+
+Purement informatif pour l'instant — **aucun mécanisme ne s'en sert
+encore** (pas d'avertissement, pas de confirmation renforcée). Objectif
+volontairement limité à poser le champ dans le schéma maintenant, pour
+pouvoir décider plus tard comment s'en servir sans avoir à re-annoter
+tous les cas existants après coup.
+
 ## 5. Interface graphique
 
 Deux panneaux : la liste des cas à gauche, le détail du cas
