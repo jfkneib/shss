@@ -118,3 +118,7 @@ construisant `pc-stats` — pas une liste théorique :
   services, paquets, Docker, virtualisation, batterie, bilan de
   santé). Référence complète du mécanisme — à relire avant d'en
   écrire un nouveau.
+- **`grep-search/`** — recherche de fichiers par contenu (`rg`/`grep`,
+  répertoire courant ou `$HOME`). Premier profil bâti quasi entièrement
+  sur des cas « gabarit » (`--stdin`) plutôt que des cas figés — le
+  motif recherché change à chaque demande.
