@@ -1,0 +1,320 @@
+#!/usr/bin/env bash
+#
+# pc-disk-info -- rapport detaille par disque (type, modele, partitions,
+# sante SMART, perfs) a partir de sysfs/udev/lsblk -- smartctl/hdparm en
+# plus si root (sinon, dit clairement "non disponible" plutot que
+# d'inventer).
+#
+# Usage : pc-disk-info [DISQUE ...]   (defaut : tous les disques reels)
+
+set -u
+export LC_NUMERIC=C
+
+for cmd in lsblk udevadm; do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+        echo "pc-disk-info: $cmd est requis" >&2
+        exit 1
+    fi
+done
+
+HAVE_SMARTCTL=0
+command -v smartctl >/dev/null 2>&1 && HAVE_SMARTCTL=1
+HAVE_HDPARM=0
+command -v hdparm >/dev/null 2>&1 && HAVE_HDPARM=1
+
+# udev_prop DEVICE PROPRIETE -- valeur d'une propriete udev, ou vide.
+udev_prop()
+{
+    udevadm info -q property -n "/dev/$1" 2>/dev/null | sed -n "s/^$2=//p"
+}
+
+# trim -- retire les espaces de debut/fin (certains fichiers sysfs en
+# ont, ex: /sys/block/*/device/vendor).
+trim()
+{
+    local s="$1"
+    s="${s#"${s%%[![:space:]]*}"}"
+    s="${s%"${s##*[![:space:]]}"}"
+    echo "$s"
+}
+
+disk_type()
+{
+    local dev="$1"
+    if [[ "$dev" == nvme* ]]; then
+        echo "NVMe SSD"
+    elif [[ "$(cat "/sys/block/$dev/queue/rotational" 2>/dev/null)" == "1" ]]; then
+        echo "HDD (disque rotatif)"
+    else
+        echo "SSD"
+    fi
+}
+
+disk_model()
+{
+    local dev="$1"
+    local m
+    # ID_MODEL_ENC d'abord : udev remplace les espaces par des "_" dans
+    # ID_MODEL ("PSSD_T7"), mais garde l'original echappe en hex
+    # ("PSSD\x20T7...") dans ID_MODEL_ENC -- printf '%b' le decode
+    # correctement. /sys/block/*/device/model en dernier repli : champ
+    # SCSI INQUIRY a largeur fixe (16 octets), tronque les modeles plus
+    # longs (constate en pratique : "ST1000DM010-2EP1" au lieu de
+    # "...-2EP102").
+    local enc
+    enc=$(udev_prop "$dev" ID_MODEL_ENC)
+    if [[ -n "$enc" ]]; then
+        m=$(trim "$(printf '%b' "$enc")")
+        [[ -n "$m" ]] && { echo "$m"; return; }
+    fi
+    m=$(udev_prop "$dev" ID_MODEL)
+    [[ -n "$m" ]] && { echo "$m"; return; }
+    if [[ -r "/sys/block/$dev/device/model" ]]; then
+        m=$(trim "$(cat "/sys/block/$dev/device/model")")
+        [[ -n "$m" ]] && { echo "$m"; return; }
+    fi
+    echo "inconnu"
+}
+
+disk_vendor()
+{
+    local dev="$1"
+    local v
+    if [[ -r "/sys/block/$dev/device/vendor" ]]; then
+        v=$(trim "$(cat "/sys/block/$dev/device/vendor")")
+        [[ -n "$v" ]] && { echo "$v"; return; }
+    fi
+    v=$(udev_prop "$dev" ID_VENDOR)
+    echo "${v:-inconnu}"
+}
+
+disk_bus()
+{
+    local dev="$1"
+    if [[ "$dev" == nvme* ]]; then
+        echo "nvme"
+        return
+    fi
+    local bus
+    bus=$(udev_prop "$dev" ID_BUS)
+    case "$bus" in
+        ata) echo "sata" ;;
+        "") echo "inconnu" ;;
+        *) echo "$bus" ;;
+    esac
+}
+
+disk_serial()
+{
+    trim "$(udev_prop "$1" ID_SERIAL_SHORT)"
+}
+
+disk_serial_or_dash()
+{
+    local s
+    s=$(disk_serial "$1")
+    echo "${s:--}"
+}
+
+# usb_topology DEVICE -- "bus-port" (ex: 2-5) et le controleur PCI
+# parent (ex: 0000:00:14.0), extraits du chemin sysfs/udev -- best
+# effort, "-" si non determinable.
+usb_bus_port()
+{
+    local dev="$1"
+    local path
+    path=$(readlink -f "/sys/class/block/$dev/device" 2>/dev/null) || { echo "-"; return; }
+    grep -oE '/[0-9]+-[0-9.]+/' <<<"$path" | head -1 | tr -d '/'
+}
+
+usb_controller()
+{
+    local dev="$1"
+    local id_path
+    id_path=$(udev_prop "$dev" ID_PATH)
+    sed -n 's/^pci-\([0-9a-f:.]*\)-usb.*/\1/p' <<<"$id_path"
+}
+
+print_partitions()
+{
+    local dev="$1"
+
+    # --json + jq, pas -r/-P + parsing maison : un champ vide (FS d'une
+    # partition non formatee, label absent...) decale tout avec un
+    # parsing par espaces -- constate en pratique (Montage affichait la
+    # taille, etc). --json isole chaque valeur sans ambiguite.
+    local json
+    json=$(LC_NUMERIC=C lsblk --json -o NAME,FSTYPE,LABEL,UUID,MOUNTPOINT,SIZE,FSUSED,FSAVAIL,FSUSE% "/dev/$dev" 2>/dev/null)
+
+    echo "Partitions :"
+    echo "------------------------------------------------------------"
+
+    local name fstype label uuid mount size fsused fsavail fsuse
+    local any=0
+    # Separateur "|", pas @tsv/IFS=tab : bash traite tab (et espace)
+    # comme des IFS "blancs", qui FUSIONNENT les delimiteurs consecutifs
+    # meme en IFS explicite -- deux tabs vides collees ne comptent que
+    # comme un seul separateur, pas deux champs vides. Constate en
+    # pratique (tous les champs decales des qu'une valeur est vide). "|"
+    # n'est pas un caractere blanc pour IFS, chaque occurrence compte.
+    while IFS='|' read -r name fstype label uuid mount size fsused fsavail fsuse; do
+        any=1
+        echo "$name"
+        echo "  FS         : ${fstype:-inconnu}"
+        echo "  Label      : ${label:--}"
+        echo "  UUID       : ${uuid:--}"
+        if [[ -n "$mount" ]]; then
+            echo "  Montage    : $mount"
+            echo "  Taille     : ${size:--}"
+            echo "  Utilisé    : ${fsused:--} (${fsuse:--})"
+            echo "  Libre      : ${fsavail:--}"
+        else
+            echo "  Montage    : NON MONTE"
+        fi
+        echo
+    done < <(jq -r '(.blockdevices[0].children // [])[] |
+        [.name, (.fstype // ""), (.label // ""), (.uuid // ""), (.mountpoint // ""),
+         (.size // ""), (.fsused // ""), (.fsavail // ""), (."fsuse%" // "")] | join("|")' <<<"$json")
+
+    (( any )) || echo "(aucune partition)"
+}
+
+print_health()
+{
+    local dev="$1"
+
+    echo "Performance & Santé :"
+    echo "------------------------------------------------------------"
+
+    local sante="non disponible"
+    local temp="-°C"
+    local vie="non disponible"
+    local demarrages="-"
+
+    if (( HAVE_SMARTCTL )); then
+        local smart_out
+        smart_out=$(smartctl -H -A "/dev/$dev" 2>/dev/null)
+        if [[ -n "$smart_out" ]] && ! grep -q "Permission denied\|Operation not permitted" <<<"$smart_out"; then
+            grep -qi "PASSED\|OK" <<<"$smart_out" && sante="OK"
+            local t
+            t=$(awk '/Temperature_Celsius|Airflow_Temperature/ {print $10; exit}' <<<"$smart_out")
+            [[ -n "$t" ]] && temp="${t}°C"
+            local hours
+            hours=$(awk '/Power_On_Hours/ {print $10; exit}' <<<"$smart_out")
+            [[ -n "$hours" ]] && vie="${hours} h de fonctionnement"
+            local cycles
+            cycles=$(awk '/Power_Cycle_Count/ {print $10; exit}' <<<"$smart_out")
+            [[ -n "$cycles" ]] && demarrages="$cycles"
+        fi
+    fi
+
+    echo "Santé SMART  : $sante"
+    echo "Température  : $temp"
+    echo "Durée vie    : $vie"
+    echo "Démarrages   : $demarrages"
+    echo
+    echo "Performances (lecture séquentielle) :"
+    echo "------------------------------------------------------------"
+
+    if (( HAVE_HDPARM )); then
+        local cache_read disk_read
+        cache_read=$(hdparm -T "/dev/$dev" 2>/dev/null | awk -F'=' '/Timing buffer-cache reads/ {print $2}' | xargs)
+        disk_read=$(hdparm -t "/dev/$dev" 2>/dev/null | awk -F'=' '/Timing buffered disk reads/ {print $2}' | xargs)
+        echo "  Lecture buffer cache (hdparm -T) : ${cache_read:-test non disponible (sudo requis)}"
+        echo "  Lecture disque (hdparm -t)       : ${disk_read:-test non disponible (sudo requis)}"
+    else
+        echo "  hdparm non installé"
+    fi
+}
+
+print_disk()
+{
+    local dev="$1"
+
+    echo "============================================================"
+    echo "DISQUE : $dev"
+    echo "============================================================"
+    echo "Type         : $(disk_type "$dev")"
+    echo "Modèle       : $(disk_model "$dev")"
+    echo "Fabricant    : $(disk_vendor "$dev")"
+    echo "Connexion    : $(disk_bus "$dev")"
+    echo "Taille       : $(lsblk -dno SIZE "/dev/$dev" 2>/dev/null | xargs)"
+    echo "Série        : $(disk_serial_or_dash "$dev")"
+
+    if [[ "$(disk_bus "$dev")" == "usb" ]]; then
+        echo "Topologie USB: bus $(usb_bus_port "$dev")"
+        echo "Contrôleur   : usb ($(usb_controller "$dev"))"
+    fi
+
+    echo
+    print_partitions "$dev"
+    echo
+    print_health "$dev"
+    echo
+    echo "------------------------------------------------------------"
+    echo
+}
+
+list_disks()
+{
+    local dev
+    for dev in /sys/block/*; do
+        dev=$(basename "$dev")
+        case "$dev" in
+            loop*|ram*|dm-*|zram*|sr*) continue ;;
+        esac
+        [[ -r "/sys/block/$dev/device" ]] || [[ "$dev" == nvme* ]] || continue
+        echo "$dev"
+    done
+}
+
+print_usb_summary()
+{
+    declare -A by_controller
+
+    local dev bus ctrl
+    for dev in $(list_disks); do
+        bus=$(disk_bus "$dev")
+        [[ "$bus" == "usb" ]] || continue
+        ctrl=$(usb_controller "$dev")
+        by_controller["$ctrl"]="${by_controller[$ctrl]:-} $dev"
+    done
+
+    (( ${#by_controller[@]} == 0 )) && return
+
+    echo "############################################################"
+    echo "      RESUME DES DISQUES PARTAGEANT UN CONTROLEUR USB"
+    echo "############################################################"
+    echo
+
+    local c
+    for c in "${!by_controller[@]}"; do
+        echo "Contrôleur : ($c)"
+        echo "Disques    :${by_controller[$c]}"
+        echo
+    done
+}
+
+main()
+{
+    echo "############################################################"
+    echo "                 RAPPORT DISQUES MACHINE"
+    echo "Date : $(date '+%Y-%m-%d %H:%M:%S')"
+    echo "Machine : $(hostname)"
+    echo "############################################################"
+    echo
+
+    local targets=("$@")
+    if (( ${#targets[@]} == 0 )); then
+        mapfile -t targets < <(list_disks)
+    fi
+
+    local dev
+    for dev in "${targets[@]}"; do
+        print_disk "$dev"
+    done
+
+    print_usb_summary
+}
+
+main "$@"

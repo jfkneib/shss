@@ -9,6 +9,13 @@ build/
 dist/
 *.deb
 
+# Cache d'embeddings d'un profil de cas curates : toujours derive,
+# jamais a committer nulle part dans le depot (voir docs/shss-cases.md
+# et examples/cases/README.md) -- filet de securite si quelqu'un copie
+# tout son ~/.shss/profiles/<nom>/ par erreur au lieu du seul
+# cases.json en preparant un nouveau profil sous examples/cases/.
+cases.embeddings.json
+
 # Notes personnelles hors projet
 dism.md
 dism.pdf

@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+#
+# tm-kill-all -- ferme TOUTES les sessions tmux (arrete le serveur tmux
+# lui-meme). Destructif mais non interactif -- comme tout script curate
+# shss, la confirmation ("utiliser ce resultat ?") a deja eu lieu cote
+# Ctrl-G avant l'execution ; en REPL/-c, pas de confirmation
+# supplementaire ici, meme convention que les autres cas (aucun cas
+# existant n'ajoute sa propre confirmation).
+
+set -u
+
+if ! tmux ls >/dev/null 2>&1; then
+    echo "Aucune session tmux en cours -- rien a fermer."
+    exit 0
+fi
+
+tmux kill-server
+echo "Toutes les sessions tmux ont ete fermees."

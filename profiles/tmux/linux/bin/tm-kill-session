@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+#
+# tm-kill-session <nom> -- ferme une session tmux precise, sans toucher
+# aux autres. Non interactif, fonctionne partout.
+#
+# Verifie l'existence de la session avant d'agir (tmux has-session) :
+# tmux kill-session sur une session absente renvoie une erreur brute
+# ("can't find session") -- autant le dire clairement des le depart.
+
+set -u
+
+name="${1:?usage: tm-kill-session <nom>}"
+
+if ! tmux has-session -t "$name" 2>/dev/null; then
+    echo "tm-kill-session : aucune session tmux nommee '$name'." >&2
+    echo "Sessions actuelles :" >&2
+    tmux ls 2>&1 >&2 || echo "(aucune)" >&2
+    exit 1
+fi
+
+tmux kill-session -t "$name"
+echo "Session tmux '$name' fermee."

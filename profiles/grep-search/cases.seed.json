@@ -1,0 +1,28 @@
+[
+  {
+    "id": "grep-motif",
+    "requests": [
+      "cherche \"config\" dans les fichiers ici",
+      "cherche \"TODO\" dans le code ici",
+      "ou est utilise \"database_url\" dans le code",
+      "trouve moi \"erreur 500\" dans ce dossier",
+      "grep \"port\" dans le repertoire courant"
+    ],
+    "script": "#!/usr/bin/env bash\n#\n# Cas curate \"grep-motif\" -- recherche par contenu dans le repertoire\n# courant de la console (motif entre guillemets dans la demande, capture\n# et transmis sur stdin par le mecanisme de cas gabarit -- jamais collee\n# dans ce script, voir docs/shss-cases.md section 4 : aucun risque\n# d'injection meme si le motif contient des guillemets, $(...), etc.)\n#\n# Appelle le vrai outil range dans le profil (SHSS_PROFILE_DIR,\n# docs/shss-cases.md) plutot que d'en embarquer une copie.\n#\n# Route par OS (uname -s) : seul linux/ existe aujourd'hui.\n\nset -u\n\nmotif=\"\"\nif [ ! -t 0 ]; then\n    motif=$(cat)\nfi\n\nif [ -z \"$motif\" ]; then\n    echo \"grep-motif : aucun motif reconnu dans la demande (rien entre guillemets) -- rien a chercher.\" >&2\n    exit 1\nfi\n\nos=\"$(uname -s)\"\ncase \"$os\" in\n    Linux)\n        exec \"$SHSS_PROFILE_DIR/scripts/linux/bin/gs-grep\" \".\" \"$motif\"\n        ;;\n    *)\n        echo \"grep-motif : pas encore pris en charge sur cet OS ($os) -- seul linux/ existe aujourd'hui.\" >&2\n        exit 1\n        ;;\nesac\n",
+    "note": "portee = repertoire courant de la console (cwd), jamais un chemin fixe",
+    "input": "stdin"
+  },
+  {
+    "id": "grep-motif-home",
+    "requests": [
+      "cherche \"config\" dans mes fichiers",
+      "cherche \"TODO\" dans mon repertoire personnel",
+      "trouve \"erreur 500\" chez moi",
+      "grep \"port\" dans mon home",
+      "cherche \"database_url\" dans tous mes fichiers personnels"
+    ],
+    "script": "#!/usr/bin/env bash\n#\n# Cas curate \"grep-motif-home\" -- meme mecanisme que \"grep-motif\", mais\n# porte sur le repertoire personnel ($HOME) plutot que le repertoire\n# courant de la console : deux cas distincts plutot qu'un seul avec de\n# la logique de detection de portee en plus -- la similarite semantique\n# fait deja ce tri (formulations \"mes fichiers\"/\"chez moi\"/\"repertoire\n# personnel\" vs \"ici\"/\"ce dossier\"), pas la peine de le refaire a la main\n# dans le script.\n#\n# Motif entre guillemets capture et transmis sur stdin par le mecanisme\n# de cas gabarit (voir grep-motif, docs/shss-cases.md section 4).\n\nset -u\n\nmotif=\"\"\nif [ ! -t 0 ]; then\n    motif=$(cat)\nfi\n\nif [ -z \"$motif\" ]; then\n    echo \"grep-motif-home : aucun motif reconnu dans la demande (rien entre guillemets) -- rien a chercher.\" >&2\n    exit 1\nfi\n\nos=\"$(uname -s)\"\ncase \"$os\" in\n    Linux)\n        exec \"$SHSS_PROFILE_DIR/scripts/linux/bin/gs-grep\" \"$HOME\" \"$motif\"\n        ;;\n    *)\n        echo \"grep-motif-home : pas encore pris en charge sur cet OS ($os) -- seul linux/ existe aujourd'hui.\" >&2\n        exit 1\n        ;;\nesac\n",
+    "note": "portee = HOME de l'utilisateur, distinct de grep-motif (cwd)",
+    "input": "stdin"
+  }
+]

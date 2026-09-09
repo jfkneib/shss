@@ -1,0 +1,357 @@
+# Base de cas curatés (`shss-cases`)
+
+> Cette page documente une fonctionnalité de la branche `miniRAG`,
+> pas encore fusionnée. `SHSS_CASES_PATH`, `SHSS_CASES_THRESHOLD` et
+> les autres variables citées ici n'existent que sur cette branche.
+
+## 1. Le problème que ça résout
+
+Le petit LLM de shss (`qwen2.5-coder`, 0.5b à 7b) invente une réponse
+plausible même quand il ne peut pas savoir la bonne — par exemple
+`#@ energie consommee par le pc @#` donnait `psutil.cpu_percent()`,
+qui mesure un taux d'usage CPU, pas une consommation électrique.
+
+La base de cas curatés permet d'écrire, une fois et à la main, le bon
+script pour ce genre de demande, puis de le faire retrouver
+automatiquement par similarité de sens — sans jamais reproposer la
+mauvaise réponse du LLM pour cette demande précise.
+
+## 2. Démarrage rapide
+
+```bash
+cd /home/jfk/git/dev/shss
+./bin/shss-cases
+```
+
+Lancé **sans aucun argument**, `shss-cases` :
+
+- ouvre une fenêtre (Tk) si `tkinter` est installé et qu'un affichage
+  est disponible — c'est le chemin le plus simple, tout se fait à la
+  souris (voir section 4) ;
+- sinon, affiche directement l'aide de la ligne de commande (section 3)
+  — rien à configurer, ça marche dans les deux cas, y compris en SSH
+  sans X.
+
+Pour forcer explicitement l'un ou l'autre :
+
+```bash
+./bin/shss-cases gui    # erreur claire si impossible, plutôt qu'un repli silencieux
+./bin/shss-cases list   # (ou n'importe quelle autre sous-commande : toujours en CLI)
+```
+
+**Pour transmettre une base à quelqu'un d'autre** (un collègue qui teste,
+une autre machine…) : ne copie que `cases.json` — c'est le seul
+fichier édité à la main. `cases.embeddings.json` (le cache
+d'embeddings, à côté) ne se copie jamais : c'est entièrement dérivé de
+`cases.json`, à régénérer localement (`shss-cases reindex`) après
+avoir mis `cases.json` en place et téléchargé le modèle d'embeddings
+(`shss-cases download-model`) si besoin. Un cache copié depuis une
+autre machine peut avoir été calculé avec un modèle légèrement
+différent (quantization différente, par exemple) — régénérer évite le
+problème plutôt que de le transmettre.
+
+## 3. Ligne de commande
+
+`./bin/shss-cases --help` affiche un exemple complet ; en résumé :
+
+| Commande | Effet |
+| --- | --- |
+| `add <id> --request "..." [--request "..."] [--note "..."]` | ajoute un cas (script sur stdin, ou `--script-file`) |
+| `edit <id> [--request "..."] [--note "..."] [--script-file f]` | modifie **seulement** les champs fournis, le reste ne bouge pas |
+| `remove <id>` | retire un cas |
+| `list` | liste les cas existants |
+| `test "une demande"` | montre les cas les plus proches + score, **n'exécute rien** |
+| `reindex [--force]` | recalcule le cache d'embeddings (à faire après tout `add`/`edit`/`remove`) |
+| `download-model` | télécharge le modèle d'embeddings curaté (~81 Mo, sans Ollama) |
+
+Exemple complet :
+
+```bash
+./bin/shss-cases add energie \
+    --request "energie consommee par le pc" \
+    --request "combien consomme mon ordinateur" \
+    --note "le LLM invente n'importe quoi ici"
+# colle le script sur stdin, Ctrl-D pour terminer
+
+./bin/shss-cases reindex
+./bin/shss-cases test "quelle est la consommation electrique de ma machine"
+```
+
+`edit` ne redemande jamais tout le cas : pour changer juste la note,
+par exemple, sans retoucher le script ni les formulations :
+
+```bash
+./bin/shss-cases edit energie --note "RAPL = CPU seulement, pas le total"
+```
+
+## 4. Cas « gabarit » : quand le contenu varie à chaque demande
+
+Un cas curaté classique (`energie`) répond toujours la même chose. Mais
+parfois ce qui doit changer, c'est un *contenu* que la demande porte
+elle-même — par exemple corriger un texte SQL collé entre guillemets,
+différent à chaque fois : `#@ corrige moi ma ligne bash : "select | id
+from t" @#`. Un script figé ne généralise pas à ce cas ; demander au
+LLM de recopier fidèlement le texte dans le script généré ne marche pas
+non plus (c'est justement là qu'il se plante le plus).
+
+Solution : `--stdin` sur `add`/`edit`. Le contenu entre le premier
+guillemet ouvrant et fermant de la demande (simple ou double) est :
+
+1. **remplacé par un marqueur fixe avant le calcul de similarité** —
+   deux demandes qui ne diffèrent que par ce contenu matchent le même
+   cas, quel que soit ce contenu ;
+2. **transmis au script sur son entrée standard** au moment de
+   l'exécution — jamais collé dans le code du script : aucun risque
+   d'injection, même si le contenu contient des guillemets, des `$(...)`,
+   etc.
+
+```bash
+./bin/shss-cases add fix-select --stdin \
+    --request 'corrige moi ma ligne bash : "select | id from t"'
+# colle un script qui lit sys.stdin.read() (ou `read` en bash)
+```
+
+Résolu, ça donne une ligne comme :
+
+```text
+printf '%s' 'select | id | name |   from itsmlocal.glpi_entities;' | SHSS_REQUEST='...' /tmp/shss-.../fix.py
+```
+
+— pas juste le chemin du script : le `printf | script` fait partie du
+résultat, avec le contenu correctement échappé pour bash (`shlex.quote`).
+
+**Variables toujours disponibles pour un cas qui matche** (gabarit ou
+pas), en bash (`"$SHSS_REQUEST"`) comme en python
+(`os.environ["SHSS_REQUEST"]`) ou n'importe quel autre langage :
+
+| Variable | Contenu |
+| --- | --- |
+| `SHSS_REQUEST` | la demande complète d'origine (pas juste le contenu entre guillemets) |
+| `SHSS_PREFIX` | le bash avant la balise `#@ ... @#` sur la même ligne |
+| `SHSS_SUFFIX` | le bash après la balise sur la même ligne |
+| `SHSS_MATCH_SCORE` | le score de similarité qui a fait matcher ce cas (ex : `0.8412`) |
+| `SHSS_CASE_ID` | l'identifiant du cas |
+| `SHSS_PROFILE_DIR` | répertoire du profil courant (`~/.shss/` ou `~/.shss/profiles/<nom>/`) |
+
+`SHSS_PROFILE_DIR` sert à appeler un script rangé à côté de la base de
+cas (par convention, sous `scripts/` dans ce répertoire) sans jamais
+coder de chemin en dur vers un clone git précis — ce répertoire, lui,
+est garanti présent partout où le profil a été installé (voir
+`profiles/pc-stats/` pour l'exemple concret : les scripts de
+`linux/bin/` — sous `linux/` puisque ce sont des outils Linux, pas
+portables tels quels vers un autre OS — sont distribués avec la base
+de cas, et un cas s'y réfère via
+`"$SHSS_PROFILE_DIR/scripts/linux/bin/..."`, jamais un chemin vers le
+dépôt).
+
+Toujours de vraies variables d'environnement, jamais collées dans le
+code du script : contrairement à une substitution textuelle
+(`@@variable@@` remplacé directement dans le source), l'échappement
+correct dépend du langage et de l'endroit exact où le texte atterrit —
+une variable d'env reste toujours de la donnée, jamais réinterprétée
+comme du code, quel que soit le langage du script.
+
+**L'aperçu montré avant exécution** (`shss a généré :`) commence
+toujours par `# cas « id » (X% de similarité)`. Pour un script long
+(plus de `SHSS_CASES_PREVIEW_LINES`, 15 par défaut) réutilisé avec une
+confiance élevée (au moins `SHSS_CASES_PREVIEW_THRESHOLD`, 0.95 par
+défaut), le texte entier n'est **pas** affiché — juste un résumé
+("script de N lignes, non affiché en entier"). Le script réellement
+écrit et exécuté reste toujours complet ; seul cet aperçu est
+raccourci, pour ne pas noyer l'écran avec un script de plusieurs
+centaines de lignes à chaque résolution.
+
+### Coefficient de danger (schéma seulement, pour l'instant)
+
+`--danger {0,1,2}` sur `add`/`edit` (`--clear-danger` pour le retirer) :
+0 lecture seule (implicite si absent), 1 modifie quelque chose de
+réversible/limité (ex : `tmux-tuer-session` — une session précise), 2
+destructif ou irréversible, ou de portée large (ex : `tmux-tuer-tout` —
+`kill-server`, tout y passe). Stocké dans le cas (`"danger": N`),
+affiché par `shss-cases list` (`[danger=N]`).
+
+Purement informatif pour l'instant — **aucun mécanisme ne s'en sert
+encore** (pas d'avertissement, pas de confirmation renforcée). Objectif
+volontairement limité à poser le champ dans le schéma maintenant, pour
+pouvoir décider plus tard comment s'en servir sans avoir à re-annoter
+tous les cas existants après coup.
+
+## 5. Interface graphique
+
+Deux panneaux : la liste des cas à gauche, le détail du cas
+sélectionné à droite (formulations, note, script). En bas, les mêmes
+actions que la ligne de commande, en boutons :
+
+- **Ajouter…** / **Modifier…** — un formulaire (identifiant,
+  formulations une par ligne, note, script — avec un bouton pour
+  charger le script depuis un fichier existant).
+- **Supprimer** — sur le cas sélectionné, avec confirmation.
+- **Tester une demande…** — une zone de texte + résultats classés par
+  score, sans rien exécuter, comme `shss-cases test`.
+- **Réindexer** / **Modèle d'embeddings…** — tournent en arrière-plan
+  (barre de progression) : la fenêtre reste utilisable pendant le
+  calcul ou le téléchargement.
+
+Aucune logique propre à la fenêtre : chaque bouton appelle exactement
+les mêmes fonctions que la ligne de commande (`src/shss/cases.py`), la
+fenêtre n'est qu'une autre façade.
+
+## 6. Comment c'est utilisé au moment de la résolution
+
+Branché dans `llm.generate_bash()`, juste après les commandes internes
+(`#@ model @#`, etc.) et avant tout appel au modèle de génération. Une
+demande dont le meilleur score dépasse `SHSS_CASES_THRESHOLD` (0.70 par
+défaut) réutilise le script curaté tel quel, sans jamais charger le
+modèle de génération — visible dans `~/.shss/resolutions.jsonl` avec le
+`kind` `case` (score, `case_id`, `profile` inclus), distinct de
+`script`/`inline` (générés) et `builtin` (voir `docs/getting-started.md`
+section 8 pour le détail des deux journaux, `history.jsonl` et
+`resolutions.jsonl` — `#@ history @#`, lui, montre juste la balise
+telle que tapée, pas ce niveau de détail).
+
+Si la base est vide (le cas par défaut, rien de curaté au départ), rien
+n'est chargé : aucun coût ajouté pour une demande ordinaire.
+
+## 7. Plusieurs bases (profils)
+
+Par défaut, une seule base (`~/.shss/cases.json`). Pour en séparer
+plusieurs — système, dev, autre — sans les mélanger :
+
+```bash
+export SHSS_CASES_PROFILE=dev
+./bin/shss-cases add ...   # va dans ~/.shss/profiles/dev/cases.json
+```
+
+`SHSS_CASES_PROFILE=<nom>` fait pointer `shss-cases` (et la résolution
+elle-même) vers `~/.shss/profiles/<nom>/cases.json` — une seule
+variable à changer, le cache d'embeddings suit automatiquement au même
+endroit (pas besoin de synchroniser `SHSS_CASES_CACHE_PATH` à la main).
+`SHSS_CASES_PATH`, s'il est défini, reste prioritaire sur le profil.
+
+**Sans exporter la variable** : `--profile <nom>` sur n'importe quelle
+sous-commande (doit se placer avant elle), pour une seule commande —
+
+```bash
+./bin/shss-cases --profile pc-stats list
+./bin/shss-cases --profile pc-stats add disques --request "..."
+```
+
+**Dans l'interface graphique** : un champ « Profil » en haut de la
+fenêtre principale (liste déroulante des profils déjà utilisés, ou
+tape un nom encore inexistant pour en créer un dès le premier
+« Ajouter… » dedans). Le titre de la fenêtre rappelle le profil actif,
+pour ne jamais se tromper de base en cours d'usage.
+
+**Directement dans la balise, au moment de la demande** — sans
+exporter quoi que ce soit avant, et sans devoir se souvenir du profil
+actif dans ce terminal :
+
+```text
+#@pc-stats@ energie consommee par le pc @#
+```
+
+`profil@` juste après `#@` (collé, sans espace avant `profil`) force
+`SHSS_CASES_PROFILE` pour **cette résolution précise seulement** — la
+variable d'environnement du shell (si définie) est restaurée
+immédiatement après, jamais modifiée durablement. La syntaxe
+historique `#@ demande @#` (avec un espace juste après `#@`) reste
+totalement inchangée : aucune demande existante n'est affectée, rien à
+migrer.
+
+Au-delà de l'organisation, séparer les bases **réduit le risque de faux
+positif** entre cas sans rapport : moins une base mélange de domaines
+différents, moins une formulation généraliste risque d'intercepter par
+erreur une demande d'un autre domaine (constaté en pratique avec un
+cas SQL qui matchait à tort une demande sur une commande bash
+quelconque — voir section 4).
+
+### `#@all@` : chercher dans tous les profils installés
+
+Le prix de cette séparation : une demande tapée sans savoir quel
+profil est actif (ou dans un terminal où rien n'a été exporté) ne
+matche rien, même si le bon cas existe ailleurs — elle repart en
+génération normale plutôt que de réutiliser le cas curaté attendu.
+
+`all` est un mot réservé, utilisable comme n'importe quel préfixe de
+profil :
+
+```text
+#@all@ energie consommee par le pc @#
+```
+
+Cherche dans **tous** les profils installés (`~/.shss/profiles/*/`) et
+la base par défaut, garde le meilleur score global tous profils
+confondus, quel que soit `SHSS_CASES_PROFILE` au moment de l'appel.
+L'aperçu (`shss a généré :`) précise alors de quel profil vient le cas
+retenu (`# cas « energie » (95.1% de similarité), profil pc-stats`) —
+seul `#@all@` l'affiche : dans tous les autres cas, le profil est déjà
+celui que l'utilisateur a choisi lui-même, inutile de le répéter à
+chaque résolution.
+
+**`all` ne peut pas être un vrai nom de profil** (`shss-cases
+--profile all add ...` refuse explicitement) — sinon indiscernable du
+mot-clé, un `~/.shss/profiles/all/` créé par erreur aurait pris le pas
+silencieusement.
+
+**À utiliser en connaissance de cause** : `#@all@` réintroduit
+exactement le risque de faux positif entre profils sans rapport que la
+séparation ci-dessus visait à éviter — volontairement, pour cette
+demande précise seulement, jamais par défaut. Constaté en pratique en
+écrivant ceci : `#@all@ corrige moi ma ligne bash : "select | id from
+t" @#` (l'exemple de la section 4, qui ne matche plus `fix-select` tel
+quel — seuil relevé à 0.82 depuis, voir sa note) est repartie sur
+`grep-motif-home` (profil `grep-search`, 77.6%) plutôt que d'échouer
+proprement comme dans son propre profil — une recherche littérale de
+`select | id from t` dans `$HOME`, sans rapport avec la demande. Pas un
+bug : le prix assumé de chercher partout plutôt que dans un seul
+domaine bien délimité.
+
+### `#@ q <question> @#` : chercher sans jamais réutiliser
+
+`#@all@` reste une résolution — un cas est retenu et exécuté, avec le
+risque de faux positif ci-dessus. `#@ q <question> @#` (builtin, voir
+`commands.py`) est différent : il **ne résout ni ne réutilise jamais
+rien**, juste une liste des cas les plus proches, pensé pour le moment
+où on ne sait pas si un cas existe déjà ou comment le formuler pour
+qu'il matche.
+
+Cherche dans tous les profils installés + la base par défaut (comme
+`#@all@`), mais **sans filtre de seuil** : `cases.find_matches_all_profiles()`
+retourne jusqu'à 20 résultats classés par score, y compris des scores
+bien en dessous de `SHSS_CASES_THRESHOLD` — un score bas reste une
+information utile (« voilà ce qui s'en rapproche le plus, mais rien de
+vraiment proche ») plutôt qu'un silence ambigu. Puisque rien n'est
+jamais exécuté à partir de ce classement, le risque de faux positif qui
+justifie la prudence de `#@all@` ne s'applique pas ici — aucune raison
+de filtrer.
+
+```text
+#@ q comment reprendre une session terminal @#
+```
+
+```text
+Cas curates les plus proches de 'comment reprendre une session terminal' :
+   72.5%  [tmux      ] tmux-reprendre-defaut    -- 'reconnecte moi a ma session tmux'
+   70.8%  [tmux      ] tmux-reprendre-session   -- 'reconnecte moi a la session tmux "travail"'
+   ...
+```
+
+## 8. Limites connues
+
+- Le modèle d'embeddings (`nomic-embed-text`, distinct du modèle de
+  génération) est nécessaire : le modèle de génération seul ne sépare
+  pas fiablement "proche" de "pas proche" en similarité cosinus (testé
+  en pratique).
+- Le seuil par défaut (0.70) est calibré sur un tout petit échantillon
+  — à affiner avec plus de cas réels avant d'y faire vraiment
+  confiance.
+- Pas de palier intermédiaire "le LLM adapte un script proche mais pas
+  identique" dans cette première version — volontaire, pour rester
+  simple à tester. Uniquement : réutilisation telle quelle au-dessus du
+  seuil, génération normale en dessous.
+- La base (`~/.shss/cases.json`) est personnelle, pas partagée par
+  défaut avec les autres utilisateurs de la machine ni livrée avec
+  shss.
+- Un cas gabarit n'extrait que la **première** chaîne entre guillemets
+  d'une demande — une demande avec plusieurs contenus variables entre
+  guillemets ne capture que le premier, les autres sont ignorés.

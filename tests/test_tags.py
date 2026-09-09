@@ -1,8 +1,10 @@
+import os
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from shss.history import read_lines
 from shss.tags import expand_line, find_requests, resolve_pending_tag
 
 
@@ -47,6 +49,79 @@ def _upper_resolver(request, prefix, suffix):
     return request.upper()
 
 
+def test_find_requests_strips_profile_prefix():
+    assert find_requests("ls #@pc-stats@ energie consommee @#") == ["energie consommee"]
+
+
+def test_expand_line_profile_prefix_stripped_from_request(monkeypatch):
+    monkeypatch.delenv("SHSS_CASES_PROFILE", raising=False)
+    assert expand_line("#@pc-stats@ energie @#", _upper_resolver) == "ENERGIE"
+
+
+def test_expand_line_profile_prefix_sets_env_var_during_resolution(monkeypatch):
+    monkeypatch.delenv("SHSS_CASES_PROFILE", raising=False)
+    seen = {}
+
+    def resolver(request, prefix, suffix):
+        seen["profile_during"] = os.environ.get("SHSS_CASES_PROFILE")
+        return request
+
+    expand_line("#@pc-stats@ energie @#", resolver)
+
+    assert seen["profile_during"] == "pc-stats"
+    assert "SHSS_CASES_PROFILE" not in os.environ  # restaure apres coup
+
+
+def test_expand_line_profile_prefix_restores_previous_value(monkeypatch):
+    monkeypatch.setenv("SHSS_CASES_PROFILE", "dev")
+    seen = {}
+
+    def resolver(request, prefix, suffix):
+        seen["profile_during"] = os.environ.get("SHSS_CASES_PROFILE")
+        return request
+
+    expand_line("#@pc-stats@ energie @#", resolver)
+
+    assert seen["profile_during"] == "pc-stats"
+    assert os.environ["SHSS_CASES_PROFILE"] == "dev"  # remis, pas efface
+
+
+def test_expand_line_without_profile_prefix_leaves_env_var_untouched(monkeypatch):
+    monkeypatch.delenv("SHSS_CASES_PROFILE", raising=False)
+    seen = {}
+
+    def resolver(request, prefix, suffix):
+        seen["profile_during"] = os.environ.get("SHSS_CASES_PROFILE")
+        return request
+
+    expand_line("#@ energie @#", resolver)
+
+    assert seen["profile_during"] is None
+
+
+def test_resolve_pending_tag_profile_prefix_on_open_tag():
+    line = "ls #@pc-stats@ trie par taille"
+    point = len(line)
+    new_line, new_point = resolve_pending_tag(line, point, _upper_resolver)
+    assert new_line == "ls TRIE PAR TAILLE"
+    assert new_point == len(new_line)
+
+
+def test_resolve_pending_tag_profile_prefix_on_closed_tag_sets_env_var(monkeypatch):
+    monkeypatch.delenv("SHSS_CASES_PROFILE", raising=False)
+    seen = {}
+
+    def resolver(request, prefix, suffix):
+        seen["profile_during"] = os.environ.get("SHSS_CASES_PROFILE")
+        return request.upper()
+
+    line = "ls #@pc-stats@ trie par taille @#"
+    resolve_pending_tag(line, len(line), resolver)
+
+    assert seen["profile_during"] == "pc-stats"
+    assert "SHSS_CASES_PROFILE" not in os.environ
+
+
 def test_resolve_pending_tag_no_tag_returns_unchanged():
     line = "ls -la"
     assert resolve_pending_tag(line, len(line), _upper_resolver) == (line, len(line))
@@ -82,3 +157,36 @@ def test_resolve_pending_tag_keeps_suffix_after_cursor():
     new_line, new_point = resolve_pending_tag(line, point, _upper_resolver)
     assert new_line == "ls TRIE PAR TAILLE -a"
     assert new_point == len("ls TRIE PAR TAILLE")
+
+
+def test_expand_line_logs_the_raw_tag_text_including_profile_prefix():
+    expand_line("#@pc-stats@ energie consomee par le pc @#", _upper_resolver)
+
+    events = read_lines(limit=1)
+    assert events[0]["line"] == "#@pc-stats@ energie consomee par le pc @#"
+
+
+def test_expand_line_logs_each_tag_separately():
+    expand_line("echo #@ un @# et #@ deux @#", _upper_resolver)
+
+    events = read_lines(limit=2)
+    assert [e["line"] for e in events] == ["#@ un @#", "#@ deux @#"]
+
+
+def test_resolve_pending_tag_logs_the_raw_text_for_a_closed_tag():
+    line = "ls #@pc-stats@ trie par taille @#"
+    resolve_pending_tag(line, len(line), _upper_resolver)
+
+    events = read_lines(limit=1)
+    assert events[0]["line"] == "#@pc-stats@ trie par taille @#"
+
+
+def test_resolve_pending_tag_logs_the_raw_text_for_a_still_open_tag():
+    # Ctrl-G peut resoudre une balise pas encore fermee (pas de '@#'
+    # tape) -- la ligne journalisee doit refleter exactement ca, sans
+    # inventer de fermeture qui n'a jamais ete tapee.
+    line = "ls #@pc-stats@ trie par taille"
+    resolve_pending_tag(line, len(line), _upper_resolver)
+
+    events = read_lines(limit=1)
+    assert events[0]["line"] == "#@pc-stats@ trie par taille"

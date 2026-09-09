@@ -1,0 +1,132 @@
+#!/usr/bin/env bash
+#
+# pc-service-info -- resume des services systemd : combien charges/
+# actifs/en echec, la liste des echecs (signal de sante important), et
+# le top 10 par memoire (PID, temps CPU cumule depuis le demarrage du
+# service, taches) -- pas les 50+ services actifs en detail, ca noierait
+# le rapport pour un interet limite au quotidien.
+
+set -u
+export LC_NUMERIC=C
+
+# printf "%-Ns" compte des octets, pas des caracteres (meme bug deja
+# rencontre et corrige dans les autres outils pc-stats) -- pave a la main.
+label()
+{
+    local text="$1"
+    local width="$2"
+    local n=$(( width - ${#text} ))
+    (( n < 0 )) && n=0
+    printf '%s%*s: ' "$text" "$n" ""
+}
+
+fmt_mem()
+{
+    awk -v b="$1" 'BEGIN {
+        if (b <= 0) { print "-"; exit }
+        split("o Ko Mo Go", u, " ")
+        i = 1
+        while (b >= 1024 && i < 4) { b /= 1024; i++ }
+        printf "%.1f %s", b, u[i]
+    }'
+}
+
+# Temps CPU cumule depuis le demarrage du SERVICE (pas une charge
+# instantanee en %) -- CPUUsageNSec de systemd est un compteur cumule,
+# pas un taux ; mesurer un taux demanderait deux lectures espacees
+# (meme principe que l'activite disque dans pc-power), pas fait ici.
+fmt_cpu_time()
+{
+    awk -v ns="$1" 'BEGIN {
+        if (ns <= 0) { print "-"; exit }
+        s = ns / 1000000000
+        h = int(s / 3600); m = int((s % 3600) / 60); sec = int(s % 60)
+        if (h > 0) printf "%dh%02dm", h, m
+        else if (m > 0) printf "%dm%02ds", m, sec
+        else printf "%ds", sec
+    }'
+}
+
+main()
+{
+    echo "############################################################"
+    echo "                  SERVICES SYSTEMD"
+    echo "Machine : $(hostname)"
+    echo "############################################################"
+    echo
+
+    local loaded active failed failed_n
+    loaded=$(systemctl list-units --type=service --all --no-legend --no-pager | wc -l)
+    active=$(systemctl list-units --type=service --state=running --no-legend --no-pager | wc -l)
+    # $1 est le symbole d'etat ("●"), pas le nom -- systemd le prefixe
+    # uniquement pour les unites en etat non nominal (constate en
+    # pratique : absent pour les services actifs normaux, present ici).
+    failed=$(systemctl list-units --type=service --state=failed --no-legend --no-pager | awk '{print $2}')
+    failed_n=0
+    [[ -n "$failed" ]] && failed_n=$(wc -l <<<"$failed")
+
+    echo "Résumé"
+    echo "------------------------------------------------------------"
+    echo "$(label "Chargés" 16)$loaded"
+    echo "$(label "Actifs" 16)$active"
+    echo "$(label "En échec" 16)$failed_n"
+    echo
+
+    if [[ -n "$failed" ]]; then
+        echo "Services en échec :"
+        echo "------------------------------------------------------------"
+        while read -r u; do
+            echo "  $u"
+        done <<<"$failed"
+        echo
+    fi
+
+    local units
+    units=$(systemctl list-units --type=service --state=running --no-legend --no-pager | awk '{print $1}')
+    [[ -z "$units" ]] && return 0
+
+    local tmp
+    tmp=$(mktemp)
+    # shellcheck disable=SC2086
+    systemctl show $units -p Id,MemoryCurrent,CPUUsageNSec,MainPID,TasksCurrent --no-pager > "$tmp"
+
+    echo "Top 10 par mémoire :"
+    echo "------------------------------------------------------------"
+    # RS="" (mode "paragraphe") : chaque bloc separe par une ligne vide
+    # devient UN enregistrement, traite d'un coup -- indispensable ici,
+    # l'ordre des proprietes dans chaque bloc n'est PAS garanti
+    # ("Id" en dernier ici, pas "TasksCurrent") : un awk qui accumule
+    # ligne par ligne et imprime sur un champ suppose "dernier" reporte
+    # sans le vouloir des valeurs du bloc precedent des que l'ordre
+    # differe -- constate en pratique (memoire de colord.service
+    # attribuee a un autre service). "|" pas une tabulation : bash
+    # traite tab comme IFS "blanc", qui fusionne des delimiteurs
+    # consecutifs meme en IFS explicite (deja rencontre pour
+    # pc-disk-info).
+    awk 'BEGIN { RS = ""; FS = "\n" }
+        {
+            id = ""; pid = ""; mem = ""; cpu = ""; tasks = ""
+            for (i = 1; i <= NF; i++) {
+                n = index($i, "=")
+                key = substr($i, 1, n - 1)
+                val = substr($i, n + 1)
+                if (key == "Id") id = val
+                else if (key == "MainPID") pid = val
+                else if (key == "MemoryCurrent") mem = val
+                else if (key == "CPUUsageNSec") cpu = val
+                else if (key == "TasksCurrent") tasks = val
+            }
+            print mem "|" id "|" pid "|" cpu "|" tasks
+        }
+    ' "$tmp" | sort -t'|' -k1,1 -rn | head -10 | while IFS='|' read -r mem id pid cpu tasks; do
+        printf "  %-32s %10s   PID %-8s  CPU %-8s  %s tâches\n" \
+            "$id" "$(fmt_mem "$mem")" "$pid" "$(fmt_cpu_time "$cpu")" "$tasks"
+        if [[ "$id" == user@*.service ]]; then
+            echo "      (agrège TOUTE la session utilisateur -- pas un service isolé, pas diagnosticable comme les autres lignes)"
+        fi
+    done
+
+    rm -f "$tmp"
+}
+
+main "$@"

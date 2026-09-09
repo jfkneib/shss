@@ -84,8 +84,9 @@ docker run --rm -it \
   shss:cpu
 ```
 
-The resolution history is written to the volume
-(`/models/history.jsonl`), so it persists. A **script-mode** result,
+The history/resolutions logs (see "Scripts and history" below —
+`history.jsonl` and `resolutions.jsonl`) are written to the volume, so
+they persist. A **script-mode** result,
 however, is written to the container's `/tmp`: the printed path is not
 reachable from the host (an inherent container limitation — the one-line
 fragment mode runs normally in `/work`).
@@ -106,7 +107,7 @@ podman uses `--device nvidia.com/gpu=all` instead of `--gpus all`;
 | Variable | Effect |
 | --- | --- |
 | `SHSS_N_THREADS` | number of inference threads — set to the number of **physical** cores (llama.cpp often guesses badly in a container); `run.sh` uses `nproc` |
-| `SHSS_N_CTX` | context window (default 2048) — `1024` is plenty for the few-shot prompt + a file preview, and cuts RAM and prompt-eval time |
+| `SHSS_N_CTX` | context window (default 2048) — the few-shot prompt alone measures ~840 tokens (grew from ~560 after adding more generic examples, see "Known limitations"); `1024` still worked in practice on the cases tested (one-liner and script-mode alike, file preview included) but leaves much less headroom than before for a long file preview or a verbose response — worth re-testing your own workload if you override it down |
 | `SHSS_N_GPU_LAYERS` | `auto` (default): offload everything if `nvidia-smi` is present, nothing otherwise. An integer forces the value. No effect on a llama.cpp binary built without CUDA (so the `cpu` image ignores the variable). |
 | `SHSS_MODEL_TAG` | `0.5b`, `1.5b-base` (default), `3b`, `7b` — the GPU adds almost nothing below 1.5b, but becomes useful at 7b |
 
@@ -291,16 +292,53 @@ unrelated to files (`ls #@ sort by size @#` produced a nonsensical result
 because of that irrelevant noise) — only a file explicitly mentioned (and
 that exists) triggers a preview.
 
-Every resolution (fragment or script) is recorded in a history —
-`~/.shss/history.jsonl`, one JSON line per entry (timestamp, request,
-result, type):
+Two separate logs, kept apart on purpose:
 
-```bash
-shss --history        # the last 20 resolutions
-shss --history 50     # the last 50
-```
+- **`~/.shss/history.jsonl`** — every `#@ ... @#` tag, **exactly as
+  typed**, delimiters and any profile prefix included (e.g.
+  `#@pc-stats@ energie consommee par le pc @#`), one JSON line per
+  entry (`timestamp`, `line`). Written from a single shared spot
+  (`tags.py`), so it works identically in the REPL, `-c` mode, **and**
+  the bashrc/`Ctrl-G` integration:
 
-`--history` does not need to load the model, so it is instant.
+  ```bash
+  shss --history        # the last 20 tags, as typed
+  shss --history 50     # the last 50
+  ```
+
+  `--history` does not need to load the model, so it is instant. This
+  file used to hold the richer content below, mixed in with the raw
+  request — the useful bit (what was actually typed, which profile)
+  ended up buried inside a `result` field that concatenated several
+  environment-variable assignments and a script path, unreadable
+  without picking it apart by hand. Kept deliberately simple now: one
+  line, one raw string, nothing to reconstruct.
+
+- **`~/.shss/resolutions.jsonl`** (`SHSS_RESOLUTIONS_PATH`) — what shss
+  actually did with a request: `kind` (`case`/`script`/`inline`/
+  `builtin`), the resolved result, and for a reused curated case (see
+  `docs/shss-cases.md`) also `score`, `case_id`, and `profile` (`null`
+  for the default base, a profile name otherwise — the one the case
+  actually came from, which with `#@all@` can differ from
+  `SHSS_CASES_PROFILE`). In the REPL and `-c` mode (not bashrc/`Ctrl-G`
+  — see below), a matching `kind: "execution"` entry follows once a
+  resolved line actually runs, with the real exit code and (truncated,
+  `SHSS_RESOLUTIONS_OUTPUT_MAX_CHARS`, 4000 chars by default) output —
+  what was suggested is one thing, whether it worked is another, and
+  only this entry answers the second question. The `Ctrl-G`/bashrc path
+  can't provide it: by the time bash runs the line, the one-shot
+  `shss-resolve-inline` process that resolved it has already exited,
+  with no way back to report what happened. No dedicated command reads
+  this file yet — `cat`/`jq` it directly.
+
+To flag a resolution as good or bad yourself — the only reliable
+signal for whether a curated case is actually worth keeping, since
+nothing here infers satisfaction automatically — `#@ feedback bon @#`
+or `#@ feedback mauvais [free-text comment] @#` right after it, in any
+mode (REPL, `-c`, or bashrc/`Ctrl-G` alike — this one doesn't depend on
+execution, unlike the `"execution"` entries above). Logged as its own
+`kind: "feedback"` entry in `resolutions.jsonl`, referencing the
+resolution it was about.
 
 ## Utility commands
 
@@ -312,8 +350,18 @@ shss — never sent to the LLM, so instant:
 #@ model 3b @#                # switch model (e.g. 3b, or deepseek-coder:1.3b)
 #@ model download 3b @#       # download a curated model (no Ollama)
 #@ history 10 @#              # same as shss --history 10
+#@ feedback bon @#            # flag the previous resolution as satisfying
+#@ feedback mauvais too slow @#  # ...or not, with an optional free-text comment
+#@ q which pc question exists already @#  # don't know how to phrase it? list the 20 closest curated requests
 #@ help @#                    # recall these commands
 ```
+
+`#@ q <question> @#` resolves nothing and reuses nothing — it searches every
+installed profile + the default base (like `#@all@`, but read-only: no
+threshold, no risk of a wrong reuse, since nothing ever gets executed off
+of it) and lists up to 20 curated requests ranked by similarity, with
+their score and which profile each comes from. Useful when you don't
+know an existing case exists, or how close your phrasing needs to be.
 
 `#@ model <tag> @#` switches the model for the rest of the current
 **REPL** session; in `-c` mode or via `Ctrl-G` in a normal console, each
@@ -413,6 +461,39 @@ The mechanism itself (tag detection, in-place injection, execution) works
 correctly in every tested case — it is the generation quality that varies
 with request complexity.
 
+Five more few-shot examples were added later, covering generic admin/text
+one-liner patterns absent before (biggest files by size, CSV column
+aggregation, most-frequent-value-in-a-log, top-N processes by resource,
+find-and-replace across matching files) — chosen to teach a
+**generalizable pattern**, not a fixed answer: an extension, a column
+number, or a resource name in the example should transfer to a different
+one in the actual request (verified: a column-aggregation example on
+columns 3/1 correctly generalized to columns 4/2 in a real request; a
+`%mem`-sort example generalized to `%cpu`). One interference case found
+in the process: an existing example ("list all pdf files") and a new one
+("list the biggest files by size") were similar enough in phrasing that
+the model blended both instead of picking one — moving them apart in the
+prompt did not fix it (tested), only merging the two intents into a
+single example (extension **and** size together) did. Remaining known
+gap: a size-threshold request that names no file extension at all
+generalizes less reliably than one that does.
+
+The model also has no reliable way to know when it doesn't understand a
+request at all — tested directly: asked to classify its own input
+("can this be solved with a bash/python command? answer OUI/NON"), it
+answered "OUI" to a chocolate cake recipe, and for a general-knowledge
+question ignored the yes/no instruction entirely and answered the
+question itself ("Paris"). Expected for a **base** model — no
+instruction-tuning/RLHF, no real self-assessment, just its trained
+completion pattern applied regardless of relevance. Mitigation that
+*is* in place, since self-classification isn't viable: every generated
+(non-curated) resolution now shows the closest curated case anyway
+(`# aucun cas curaté réutilisé -- le plus proche : « id » (score%,
+profil X)`), purely informational — a low score doesn't mean the
+request was nonsense (a legitimate but uncurated request, e.g.
+"compress this folder as 7z", scores just as low), but it does tell you
+the answer is an ungrounded guess, not a known-good curated one.
+
 Another pitfall observed and fixed: without a repetition penalty,
 `llama-cpp-python` can make the model loop on a degenerate pattern until
 the `max_tokens` cutoff — e.g. a complex request generated
@@ -435,8 +516,9 @@ src/shss/
   inline.py                one-off resolution (used by bin/shss-resolve-inline)
   tags.py                  detection/replacement of #@ ... @# tags
   llm.py                   GGUF model, prompt, fragment/script dispatch, model list
-  commands.py              utility commands (models, model, history, help)
-  history.py               JSONL log of resolutions (~/.shss/history.jsonl)
+  commands.py              utility commands (models, model, history, feedback, help)
+  history.py               JSONL log of the raw #@ ... @# text (~/.shss/history.jsonl)
+  resolutions.py           JSONL log of resolutions/executions/feedback (~/.shss/resolutions.jsonl)
   context.py               preview of mentioned files, injected into the hidden prompt
   shell.py                 persistent bash session (sentinel-based)
 tests/                     tests (do not load the model, unless noted otherwise)

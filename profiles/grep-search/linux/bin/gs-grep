@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+#
+# gs-grep -- recherche par contenu, coeur du profil grep-search.
+#
+# Usage : gs-grep <repertoire> <motif>
+#
+# rg (ripgrep) si present -- respecte .gitignore/.ignore nativement,
+# ignore les binaires par defaut, plus rapide sur un gros arbre.
+# Repli sur grep sinon (POSIX, toujours present) -- .gitignore n'existe
+# pas pour lui, donc exclusions ajoutees a la main pour rester
+# raisonnable sur un depot node/python typique.
+#
+# Jamais suppose : rg peut manquer meme sur une machine de dev (constate
+# en pratique -- ack et fd absents sur celle qui a servi a ecrire ce
+# script, alors que rg et fzf y etaient).
+#
+# Limite connue sur un scope $HOME (cas grep-motif-home) : exclusions
+# ci-dessous couvertes pour un depot de code (.git/node_modules/...),
+# mais un HOME contient aussi des caches et journaux d'outils installes
+# (ex. ~/.claude, ~/.vscode-server, profils de navigateur) impossibles a
+# tous connaitre a l'avance -- constate en pratique en testant ce script
+# depuis /tmp : le motif de test s'est retrouve matche dans le propre
+# journal de session de l'outil qui ecrivait ce fichier. Pas de solution
+# generale ici, juste le dire honnetement plutot que promettre un HOME
+# "propre".
+
+set -u
+
+scope="${1:?usage: gs-grep <repertoire> <motif>}"
+motif="${2:?usage: gs-grep <repertoire> <motif>}"
+
+if [ ! -d "$scope" ]; then
+    echo "gs-grep : repertoire introuvable : $scope" >&2
+    exit 1
+fi
+
+if command -v rg >/dev/null 2>&1; then
+    rg -n --hidden \
+        -g '!.git' -g '!node_modules' -g '!.venv' -g '!venv' \
+        -g '!.cache' -g '!__pycache__' \
+        -- "$motif" "$scope"
+    status=$?
+else
+    grep -rn \
+        --exclude-dir=.git --exclude-dir=node_modules \
+        --exclude-dir=.venv --exclude-dir=venv \
+        --exclude-dir=.cache --exclude-dir=__pycache__ \
+        -- "$motif" "$scope"
+    status=$?
+fi
+
+# grep/rg renvoient 1 quand rien ne matche (pas une erreur) -- distinguer
+# de 2+ (vraie erreur : motif invalide, repertoire illisible...).
+if [ "$status" -eq 1 ]; then
+    echo "gs-grep : aucune occurrence de '$motif' sous $scope" >&2
+    exit 0
+elif [ "$status" -ge 2 ]; then
+    exit "$status"
+fi

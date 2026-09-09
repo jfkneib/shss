@@ -4,6 +4,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import shss.inline as inline_module
+from shss.history import read_lines
 
 
 class _FakeLLM:
@@ -56,3 +57,17 @@ def test_main_multiline_script_display_stays_multiline(monkeypatch, capsys):
     assert out_lines[0] == "/tmp/fake.py"
     assert out_lines[1] == str(len("/tmp/fake.py"))
     assert "\n".join(out_lines[2:]).rstrip("\n") == script
+
+
+def test_main_logs_the_raw_tag_to_history_like_the_repl(monkeypatch):
+    # L'integration bashrc/Ctrl-G (ce module) ne peut pas beneficier du
+    # journal riche des resolutions (voir resolutions.py : le process
+    # a deja quitte au moment ou bash execute la ligne) -- l'historique
+    # brut, lui, doit marcher pareil ici que dans le REPL/-c (voir
+    # tags.resolve_pending_tag()).
+    monkeypatch.setattr(inline_module, "MiniLLM", lambda: _FakeLLM("-S"))
+    line = "ls #@pc-stats@ trie par taille @#"
+    inline_module.main([line, str(len(line))])
+
+    events = read_lines(limit=1)
+    assert events[0]["line"] == "#@pc-stats@ trie par taille @#"

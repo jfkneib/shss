@@ -51,17 +51,51 @@ def build_key_bindings(llm: MiniLLM):
     return kb
 
 
+def _resolver_with_display(llm: MiniLLM):
+    """Build a resolver that shows what a matched case or a freshly
+    generated script actually was — not just the resolved command
+    line, which for a case is only 'SHSS_..._SCORE=0.9500 ... /tmp/
+    shss-xxx.sh' (the score buried in an env var assignment, easy to
+    miss, exactly what was reported as "not shown"). Mirrors
+    inline.py's record_display: confirm() always returns True here
+    (this is the REPL / -c mode, no interactive "utiliser ce résultat
+    ?" gate — that's Ctrl-G-only, see build_key_bindings), it's only
+    used to capture the display text as a side effect.
+
+    Printed only when it differs from the resolved line itself
+    (skipped for a plain inline LLM one-liner, where display ==
+    result and the caller's own '→ {expanded}' would just repeat it).
+    """
+
+    def make_resolver():
+        holder = {}
+
+        def show(text: str) -> bool:
+            holder["text"] = text
+            return True
+
+        def resolver(request: str, prefix: str, suffix: str) -> str:
+            holder.pop("text", None)
+            try:
+                result = llm.generate_bash(request, prefix, suffix, confirm=show)
+            except Exception as exc:
+                return f"echo 'shss llm error: {exc}' 1>&2"
+            text = holder.get("text")
+            if text and text != result:
+                print(f"\nshss a généré :\n{text}\n")
+            return result
+
+        return resolver
+
+    return make_resolver()
+
+
 def repl(llm: MiniLLM) -> int:
     from prompt_toolkit import PromptSession
 
     shell = PersistentShell()
     session = PromptSession(key_bindings=build_key_bindings(llm))
-
-    def resolver(request: str, prefix: str, suffix: str) -> str:
-        try:
-            return llm.generate_bash(request, prefix, suffix)
-        except Exception as exc:
-            return f"echo 'shss llm error: {exc}' 1>&2"
+    resolver = _resolver_with_display(llm)
 
     try:
         while True:
@@ -76,43 +110,70 @@ def repl(llm: MiniLLM) -> int:
                 break
 
             expanded = expand_line(line, resolver)
-            if expanded != line:
+            resolved = expanded != line
+
+            if resolved:
                 print(f"→ {expanded}")
 
-            output, _ = shell.run(expanded)
+            output, code = shell.run(expanded)
             if output:
                 print(output, end="")
+
+            if resolved:
+                _log_execution(line, expanded, output, code)
     finally:
         shell.close()
 
     return 0
 
 
+def _log_execution(line: str, expanded: str, output: str, code: int) -> None:
+    """Journalise le resultat reel de l'execution -- seulement quand
+    la ligne contenait au moins une balise resolue (`expanded != line`) :
+    une commande bash ordinaire, sans rapport avec shss, n'a rien a
+    faire dans un historique cense servir a evaluer ses propres
+    suggestions. Couvre le REPL et le mode -c (run_once()) -- ne
+    couvre PAS l'integration bashrc/Ctrl-G (shell-integration/
+    shss.bash) : la, le process shss (`bin/shss-resolve-inline`) a
+    deja rendu la main et quitte avant que bash execute la ligne,
+    aucun moyen de recuperer son resultat depuis ce cote-la sans un
+    mecanisme separe (PROMPT_COMMAND cote bash) -- pas fait ici."""
+    from .resolutions import log_execution
+
+    log_execution(line, expanded, output, code)
+
+
 def run_once(llm: MiniLLM, line: str) -> int:
     shell = PersistentShell()
     try:
-        expanded = expand_line(line, llm.generate_bash)
-        if expanded != line:
+        expanded = expand_line(line, _resolver_with_display(llm))
+        resolved = expanded != line
+
+        if resolved:
             print(f"→ {expanded}")
+
         output, code = shell.run(expanded)
         if output:
             print(output, end="")
+
+        if resolved:
+            _log_execution(line, expanded, output, code)
+
         return code
     finally:
         shell.close()
 
 
 def print_history(limit: int) -> int:
-    from .history import read_events
+    from .history import format_line, read_lines
 
-    events = read_events(limit)
+    events = read_lines(limit)
     if not events:
         print("shss: historique vide")
         return 0
 
     for e in events:
-        arrow = f"{e['request']!r} -> {e['result']!r}"
-        print(f"[{e['timestamp']}] {e['kind']:6} {arrow}")
+        print(format_line(e))
     return 0
 
 

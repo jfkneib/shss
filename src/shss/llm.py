@@ -8,7 +8,7 @@ import uuid
 from pathlib import Path
 
 from .context import build_context
-from .history import log_event
+from .resolutions import log_event
 
 MODEL_NAME = os.environ.get("SHSS_MODEL_NAME", "qwen2.5-coder")
 MODEL_TAG = os.environ.get("SHSS_MODEL_TAG", "1.5b-base")
@@ -100,6 +100,25 @@ _SHEBANG_EXTENSIONS = [
     ("node", ".js"),
 ]
 
+# Exemples choisis pour enseigner un PATTERN generalisable (extension,
+# colonne, seuil... varient a chaque exemple), jamais une reponse figee a
+# un cas precis -- ex: "les 10 fichiers jpg les plus lourds" doit aussi
+# marcher pour "les 5 fichiers png les plus lourds" ou "les fichiers de
+# plus de 100 Mo dans /var/log", pas seulement jpg.
+#
+# Verifie en pratique (pas suppose) sur qwen2.5-coder:1.5b-base : deux
+# exemples a la formulation trop proche (ex: "liste tous les fichiers X
+# du dossier courant" et "liste les N fichiers les plus lourds du
+# dossier courant") se melangent l'un dans l'autre au lieu de rester
+# distincts -- la reponse generee empruntait un bout de chaque exemple
+# plutot que de suivre fidelement le bon. Resolu en fusionnant les deux
+# intentions proches (extension + taille) en un seul exemple plutot que
+# deux voisins qui se parasitent -- pas juste les eloigner dans le
+# prompt, insuffisant a lui seul (teste aussi). Limite connue malgre
+# cette fusion : une demande de taille SANS extension mentionnee (ex.
+# "les plus gros fichiers de plus de 100 Mo dans /var/log", sans dire
+# quel type de fichier) generalise moins bien que lorsque l'extension
+# est presente.
 FEW_SHOT = """Tu réponds à une demande soit par un fragment bash à insérer dans une
 ligne existante (le symbole █ marque l'endroit à remplir), soit par un
 script complet si la tâche demande plusieurs étapes (fichiers,
@@ -118,6 +137,26 @@ plutôt que de deviner.
 Ligne: █
 Demande: liste tous les fichiers pdf du dossier courant
 Réponse: find . -iname "*.pdf"
+
+Ligne: █
+Demande: additionne la colonne 3 d'un fichier csv, groupee par la colonne 1
+Réponse: awk -F, '{{s[$1]+=$3}} END {{for (k in s) print k, s[k]}}' data.csv
+
+Ligne: █
+Demande: quelles adresses ip apparaissent le plus souvent dans access.log
+Réponse: grep -oE '[0-9]{{1,3}}(\\.[0-9]{{1,3}}){{3}}' access.log | sort | uniq -c | sort -rn | head
+
+Ligne: █
+Demande: quels sont les 5 processus qui consomment le plus de memoire
+Réponse: ps aux --sort=-%mem | head -6
+
+Ligne: █
+Demande: remplace TODO par FIXME dans tous les fichiers txt qui en contiennent
+Réponse: grep -rl "TODO" --include="*.txt" . | xargs sed -i 's/TODO/FIXME/g'
+
+Ligne: █
+Demande: liste les 10 fichiers jpg les plus lourds du dossier courant
+Réponse: find . -iname "*.jpg" -type f -exec du -h {{}} + | sort -rh | head -10
 
 Ligne: ls █
 Demande: affiche aussi les fichiers caches
@@ -304,6 +343,17 @@ def _env_int(name: str, default):
         return default
 
 
+def _env_float(name: str, default):
+    """float() of env var `name`, or `default` if unset/empty/unparseable."""
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        return default
+
+
 def _gpu_layers() -> int:
     """How many model layers to offload to the GPU.
 
@@ -431,7 +481,12 @@ class MiniLLM:
         `request` is checked against built-in commands (see commands.py)
         first — "models", "model <tag>", "history [N]", "help" — which
         never touch the LLM at all and never ask for confirmation
-        (deterministic, instant, nothing to review).
+        (deterministic, instant, nothing to review). Then against the
+        curated cases store (see cases.py): a confident match reuses a
+        hand-written script as-is, still skipping the generation model
+        entirely — this is what makes Ctrl-G, the REPL and -c mode all
+        benefit the same way, with no extra wiring per caller: they all
+        go through this one method.
         """
         request = request.strip()
 
@@ -442,6 +497,146 @@ class MiniLLM:
             result = _write_script(_as_display_script(builtin_output))
             log_event(request, prefix, suffix, result, "builtin")
             return result
+
+        from .cases import best_match, best_match_all_profiles
+
+        # SHSS_CASES_PROFILE=all (mot reserve, voir tags.py et
+        # cases.RESERVED_PROFILE_NAMES) : #@all@ demande explicitement
+        # de chercher dans tous les profils installes plutot que le
+        # seul profil courant -- une echappatoire volontaire, jamais le
+        # comportement par defaut (voir best_match_all_profiles()).
+        # `matched_profile` suit le cas reellement retenu (None = base
+        # par defaut), pas la variable d'environnement : avec #@all@,
+        # le profil d'origine peut differer de SHSS_CASES_PROFILE.
+        searching_all = os.environ.get("SHSS_CASES_PROFILE") == "all"
+        if searching_all:
+            match_all = best_match_all_profiles(request)
+            match = match_all[:3] if match_all is not None else None
+            matched_profile = match_all[3] if match_all is not None else None
+        else:
+            match = best_match(request)
+            matched_profile = os.environ.get("SHSS_CASES_PROFILE")
+
+        if match is not None:
+            case, score, payload = match
+            stdin_mode = case.get("input") == "stdin" and payload is not None
+
+            # Le score n'apparaissait jusqu'ici que via `shss-cases
+            # test`, jamais au moment reel ou un cas est effectivement
+            # reutilise -- ajoute a l'apercu ("shss a genere :") pour
+            # que la confiance du match soit toujours visible, pas
+            # seulement en testant a part.
+            header = f"# cas « {case['id']} » ({score * 100:.1f}% de similarité)"
+            if searching_all:
+                # Seul #@all@ a besoin de le preciser : dans tous les
+                # autres cas, le profil est deja celui que l'utilisateur
+                # a lui-meme choisi (env var ou prefixe #@profil@),
+                # inutile de le repeter a chaque resolution.
+                header += f", profil {matched_profile or 'défaut'}"
+
+            # Au-dela d'un seuil de confiance ET d'une longueur de
+            # script, l'apercu se contente d'un resume plutot que le
+            # texte entier : un script de quelques lignes ne coute rien
+            # a montrer meme a 100%, mais un long script (600+ lignes,
+            # constate en pratique avec le cas energie) reste du bruit
+            # meme a 96% -- les deux conditions ensemble, pas la
+            # confiance seule.
+            preview_score = _env_float("SHSS_CASES_PREVIEW_THRESHOLD", 0.95)
+            preview_lines = _env_int("SHSS_CASES_PREVIEW_LINES", 15)
+            n_lines = case["script"].count("\n") + 1
+            if score >= preview_score and n_lines > preview_lines:
+                script_preview = (
+                    f"(script de {n_lines} lignes, non affiché en entier -- "
+                    f"confiance élevée, {score * 100:.1f}% ; "
+                    "SHSS_CASES_PREVIEW_THRESHOLD/_LINES pour ajuster)"
+                )
+            else:
+                script_preview = case["script"]
+
+            review_text = f"{header}\n{script_preview}"
+            if stdin_mode:
+                review_text = f"{header}\n# entrée (stdin) : {payload!r}\n{script_preview}"
+            if confirm is not None and not confirm(review_text):
+                raise ResolutionCancelled()
+
+            script_path = _write_script(case["script"])
+            import shlex
+
+            from .cases import profile_dir_for
+
+            # Contexte toujours disponible pour un cas qui matche, par
+            # convention, via des variables d'environnement -- jamais
+            # collees dans le code du script (pas de risque d'injection,
+            # contrairement a une substitution textuelle) et lisibles
+            # pareil en bash ($SHSS_REQUEST), en python
+            # (os.environ["SHSS_REQUEST"]) ou n'importe quel langage :
+            #   SHSS_REQUEST     la demande complete d'origine
+            #   SHSS_PREFIX      le bash avant la balise sur la ligne
+            #   SHSS_SUFFIX      le bash apres la balise sur la ligne
+            #   SHSS_MATCH_SCORE score de similarite qui a fait matcher ce cas
+            #   SHSS_CASE_ID     l'identifiant du cas
+            #   SHSS_PROFILE_DIR repertoire du profil dont vient le cas
+            #                    retenu (~/.shss/ ou
+            #                    ~/.shss/profiles/<nom>/) -- permet a un cas
+            #                    d'appeler un script range a cote (sous
+            #                    scripts/, par convention) sans coder de
+            #                    chemin en dur vers un clone git precis :
+            #                    ce repertoire, lui, est garanti present
+            #                    partout ou le profil a ete installe. Voir
+            #                    profiles/pc-stats/README.md. Suit
+            #                    `matched_profile`, pas SHSS_CASES_PROFILE :
+            #                    avec #@all@ les deux peuvent differer.
+            env_vars = {
+                "SHSS_REQUEST": request,
+                "SHSS_PREFIX": prefix,
+                "SHSS_SUFFIX": suffix,
+                "SHSS_MATCH_SCORE": f"{score:.4f}",
+                "SHSS_CASE_ID": case["id"],
+                "SHSS_PROFILE_DIR": str(profile_dir_for(matched_profile)),
+            }
+            env_prefix = "".join(f"{name}={shlex.quote(value)} " for name, value in env_vars.items())
+            if stdin_mode:
+                # Le contenu variable ne touche jamais le code du script
+                # non plus (pas d'injection possible) : il passe par
+                # stdin, comme n'importe quel pipe bash normal.
+                result = f"printf '%s' {shlex.quote(payload)} | {env_prefix}{script_path}"
+            else:
+                result = f"{env_prefix}{script_path}"
+
+            log_event(
+                request, prefix, suffix, result, "case",
+                score=score, case_id=case["id"], profile=matched_profile,
+            )
+            return result
+
+        # Rien de curate n'a matche -- avant de lancer la generation (le
+        # plus lent, plusieurs secondes), regarde si un cas existe quand
+        # meme quelque part, meme en dessous du seuil de reutilisation :
+        # jamais un filtre bloquant (le modele generatif n'a aucune
+        # facon fiable de savoir lui-meme s'il comprend une demande,
+        # verifie en pratique -- voir "Known limitations" du README),
+        # juste une information affichee a cote du resultat genere,
+        # meme principe que #@ q ... @# (commands.py). Cout mesure
+        # (embedder recharge) : ~0.2-0.4s, negligeable devant la
+        # generation elle-meme ; gratuit si aucun cas n'est installe
+        # nulle part (find_matches_all_profiles() ne charge alors aucun
+        # modele).
+        closest_note = None
+        try:
+            from .cases import find_matches_all_profiles
+
+            closest = find_matches_all_profiles(request, top_k=1)
+            if closest:
+                near_case, near_score, _near_req, near_profile = closest[0]
+                label = near_profile or "défaut"
+                closest_note = (
+                    f"# aucun cas curaté réutilisé -- le plus proche : "
+                    f"« {near_case['id']} » ({near_score * 100:.1f}%, profil {label})"
+                )
+        except FileNotFoundError:
+            # Modele d'embeddings absent : cette note est un bonus,
+            # jamais bloquant pour la generation elle-meme.
+            pass
 
         self._ensure_loaded()
         context = build_context(request)
@@ -464,7 +659,13 @@ class MiniLLM:
             kind = "inline"
             display = text.split("\n", 1)[0].strip()
 
-        if confirm is not None and not confirm(display):
+        # La note ne va jamais dans `result` (ce qui s'execute/se colle
+        # dans la ligne) : un commentaire colle avant un fragment casse
+        # la syntaxe de la ligne bash environnante. Seul l'apercu
+        # (confirm / affichage REPL) la voit.
+        display_with_note = f"{closest_note}\n{display}" if closest_note else display
+
+        if confirm is not None and not confirm(display_with_note):
             raise ResolutionCancelled()
 
         result = _write_script(text) if kind == "script" else display

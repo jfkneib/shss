@@ -234,8 +234,17 @@ class _FakeLlama:
 
 
 def _fake_shss(monkeypatch, tmp_path, fake_text):
-    monkeypatch.setenv("SHSS_HISTORY_PATH", str(tmp_path / "history.jsonl"))
+    # generate_bash() journalise dans resolutions.jsonl (voir
+    # shss.resolutions.log_event()) -- history.jsonl (la ligne #@ ... @#
+    # brute) est journalise a part, par tags.py, jamais atteint depuis
+    # generate_bash() directement (ces tests l'appellent sans passer par
+    # tags.expand_line()).
+    monkeypatch.setenv("SHSS_RESOLUTIONS_PATH", str(tmp_path / "resolutions.jsonl"))
     monkeypatch.setattr(llm_module, "SCRIPT_DIR", tmp_path / "scripts")
+    # Base de cas curates isolee (vide) : jamais ~/.shss/cases.json reel,
+    # meme s'il existe sur la machine qui fait tourner les tests.
+    monkeypatch.setenv("SHSS_CASES_PATH", str(tmp_path / "cases.json"))
+    monkeypatch.setenv("SHSS_CASES_CACHE_PATH", str(tmp_path / "cases.embeddings.json"))
 
     instance = llm_module.MiniLLM.__new__(llm_module.MiniLLM)
     instance._llm = _FakeLlama(fake_text)
@@ -265,7 +274,7 @@ def test_generate_bash_script_mode_writes_file_and_returns_its_path(monkeypatch,
 
 
 def test_generate_bash_logs_to_history(monkeypatch, tmp_path):
-    from shss.history import read_events
+    from shss.resolutions import read_events
 
     llm = _fake_shss(monkeypatch, tmp_path, "-S")
     llm.generate_bash("trie par taille", "ls ", "")
@@ -291,7 +300,7 @@ def test_generate_bash_confirm_sees_the_final_display_text(monkeypatch, tmp_path
 
 
 def test_generate_bash_confirm_false_cancels_without_side_effects(monkeypatch, tmp_path):
-    from shss.history import read_events
+    from shss.resolutions import read_events
 
     llm = _fake_shss(monkeypatch, tmp_path, "#!/usr/bin/env python3\nprint('hi')")
 
@@ -302,4 +311,337 @@ def test_generate_bash_confirm_false_cancels_without_side_effects(monkeypatch, t
         pass
 
     assert read_events() == []
+
+
+def test_generate_bash_uses_confident_case_match_without_calling_llm(monkeypatch, tmp_path):
+    import shss.cases as cases_module
+    from shss.resolutions import read_events
+
+    llm = _fake_shss(monkeypatch, tmp_path, "ne devrait jamais etre lu")
+    case = {"id": "energie", "requests": ["x"], "script": "#!/usr/bin/env bash\necho watts\n"}
+    monkeypatch.setattr(cases_module, "best_match", lambda request, **kw: (case, 0.9, None))
+
+    result = llm.generate_bash("energie consommee par le pc")
+
+    script_path = result.rsplit(" ", 1)[-1]  # apres le prefixe SHSS_REQUEST=...
+    assert Path(script_path).read_text() == case["script"]
+    assert llm._llm.last_prompt is None  # le LLM de generation n'a jamais tourne
+    events = read_events()
+    assert events[0]["kind"] == "case"
+    assert events[0]["result"] == result
+
+
+def test_generate_bash_falls_through_to_llm_without_confident_case_match(monkeypatch, tmp_path):
+    import shss.cases as cases_module
+
+    llm = _fake_shss(monkeypatch, tmp_path, "-S")
+    monkeypatch.setattr(cases_module, "best_match", lambda request, **kw: None)
+
+    result = llm.generate_bash("trie par taille", "ls ", "")
+
+    assert result == "-S"
+    assert llm._llm.last_prompt is not None
+
+
+def test_generate_bash_llm_fallback_shows_closest_case_note_but_never_in_result(monkeypatch, tmp_path):
+    import shss.cases as cases_module
+
+    llm = _fake_shss(monkeypatch, tmp_path, "-S")
+    monkeypatch.setattr(cases_module, "best_match", lambda request, **kw: None)
+    near_case = {"id": "tri", "requests": ["x"], "script": "y"}
+    monkeypatch.setattr(
+        cases_module,
+        "find_matches_all_profiles",
+        lambda request, **kw: [(near_case, 0.123, "trie les machins", "dev")],
+    )
+    seen = {}
+
+    result = llm.generate_bash(
+        "un truc pas couvert", "ls ", "", confirm=lambda text: seen.setdefault("text", text) or True
+    )
+
+    assert result == "-S"  # la note ne pollue jamais ce qui s'execute
+    assert "12.3%" in seen["text"]
+    assert "tri" in seen["text"]
+    assert "dev" in seen["text"]
+
+
+def test_generate_bash_llm_fallback_no_note_when_nothing_curated_exists(monkeypatch, tmp_path):
+    import shss.cases as cases_module
+
+    llm = _fake_shss(monkeypatch, tmp_path, "-S")
+    monkeypatch.setattr(cases_module, "best_match", lambda request, **kw: None)
+    monkeypatch.setattr(cases_module, "find_matches_all_profiles", lambda request, **kw: [])
+    seen = {}
+
+    llm.generate_bash(
+        "un truc pas couvert", "ls ", "", confirm=lambda text: seen.setdefault("text", text) or True
+    )
+
+    assert seen["text"] == "-S"  # pas de note quand il n'y a rien a comparer
+
+
+def test_generate_bash_llm_fallback_survives_missing_embedding_model(monkeypatch, tmp_path):
+    import shss.cases as cases_module
+
+    llm = _fake_shss(monkeypatch, tmp_path, "-S")
+    monkeypatch.setattr(cases_module, "best_match", lambda request, **kw: None)
+
+    def _boom(*a, **kw):
+        raise FileNotFoundError("GGUF introuvable pour le modele d'embeddings")
+
+    monkeypatch.setattr(cases_module, "find_matches_all_profiles", _boom)
+
+    result = llm.generate_bash("un truc pas couvert", "ls ", "")
+
+    assert result == "-S"
+
+
+def test_generate_bash_case_match_still_honors_confirm(monkeypatch, tmp_path):
+    import shss.cases as cases_module
+
+    llm = _fake_shss(monkeypatch, tmp_path, "ne devrait jamais etre lu")
+    case = {"id": "energie", "requests": ["x"], "script": "#!/usr/bin/env bash\necho watts\n"}
+    monkeypatch.setattr(cases_module, "best_match", lambda request, **kw: (case, 0.9, None))
+
+    try:
+        llm.generate_bash("energie consommee par le pc", confirm=lambda text: False)
+        assert False, "devrait lever ResolutionCancelled"
+    except ResolutionCancelled:
+        pass
     assert not (tmp_path / "scripts").exists()
+
+
+def test_generate_bash_case_match_confirm_shows_score_and_id(monkeypatch, tmp_path):
+    import shss.cases as cases_module
+
+    llm = _fake_shss(monkeypatch, tmp_path, "ne devrait jamais etre lu")
+    case = {"id": "energie", "requests": ["x"], "script": "#!/usr/bin/env bash\necho watts\n"}
+    monkeypatch.setattr(cases_module, "best_match", lambda request, **kw: (case, 0.8412, None))
+    seen = {}
+
+    llm.generate_bash("energie consommee par le pc", confirm=lambda text: seen.setdefault("text", text) or True)
+
+    assert "84.1%" in seen["text"]
+    assert "energie" in seen["text"]
+
+
+def test_generate_bash_all_profile_uses_cross_profile_search_and_reports_it(monkeypatch, tmp_path):
+    import shss.cases as cases_module
+
+    llm = _fake_shss(monkeypatch, tmp_path, "ne devrait jamais etre lu")
+    monkeypatch.setenv("SHSS_CASES_PROFILE", "all")
+    case = {"id": "energie", "requests": ["x"], "script": "#!/usr/bin/env bash\necho watts\n"}
+    monkeypatch.setattr(
+        cases_module, "best_match", lambda *a, **kw: (_ for _ in ()).throw(
+            AssertionError("#@all@ doit passer par best_match_all_profiles, pas best_match")
+        )
+    )
+    monkeypatch.setattr(
+        cases_module, "best_match_all_profiles", lambda request, **kw: (case, 0.9, None, "pc-stats")
+    )
+    seen = {}
+
+    llm.generate_bash(
+        "energie consommee par le pc",
+        confirm=lambda text: seen.setdefault("text", text) or True,
+    )
+
+    assert "profil pc-stats" in seen["text"]
+
+
+def test_generate_bash_all_profile_sets_profile_dir_from_matched_profile_not_env(monkeypatch, tmp_path):
+    import shss.cases as cases_module
+
+    llm = _fake_shss(monkeypatch, tmp_path, "ne devrait jamais etre lu")
+    monkeypatch.setenv("SHSS_CASES_PROFILE", "all")
+    monkeypatch.setattr(cases_module.Path, "home", staticmethod(lambda: tmp_path))
+    case = {"id": "energie", "requests": ["x"], "script": "#!/usr/bin/env bash\necho watts\n"}
+    monkeypatch.setattr(
+        cases_module, "best_match_all_profiles", lambda request, **kw: (case, 0.9, None, "pc-stats")
+    )
+
+    result = llm.generate_bash("energie consommee par le pc")
+
+    expected_dir = str(tmp_path / ".shss" / "profiles" / "pc-stats")
+    assert expected_dir in result
+
+
+def test_generate_bash_all_profile_falling_back_to_default_base_shows_default_label(monkeypatch, tmp_path):
+    import shss.cases as cases_module
+
+    llm = _fake_shss(monkeypatch, tmp_path, "ne devrait jamais etre lu")
+    monkeypatch.setenv("SHSS_CASES_PROFILE", "all")
+    case = {"id": "fix-select", "requests": ["x"], "script": "#!/usr/bin/env bash\necho x\n"}
+    monkeypatch.setattr(
+        cases_module, "best_match_all_profiles", lambda request, **kw: (case, 0.9, None, None)
+    )
+    seen = {}
+
+    llm.generate_bash(
+        "corrige moi ma ligne bash",
+        confirm=lambda text: seen.setdefault("text", text) or True,
+    )
+
+    assert "profil défaut" in seen["text"]
+
+
+def test_generate_bash_case_match_abbreviates_long_script_at_high_confidence(monkeypatch, tmp_path):
+    import shss.cases as cases_module
+
+    llm = _fake_shss(monkeypatch, tmp_path, "ne devrait jamais etre lu")
+    long_script = "#!/usr/bin/env bash\n" + "echo ligne\n" * 30  # > SHSS_CASES_PREVIEW_LINES (15)
+    case = {"id": "energie", "requests": ["x"], "script": long_script}
+    monkeypatch.setattr(cases_module, "best_match", lambda request, **kw: (case, 0.97, None))
+    seen = {}
+
+    result = llm.generate_bash(
+        "energie consommee par le pc", confirm=lambda text: seen.setdefault("text", text) or True
+    )
+
+    assert "echo ligne" not in seen["text"]  # resume, pas le texte entier
+    assert "32 lignes" in seen["text"]  # shebang + 30 "echo ligne" + le \n final
+    # le script REELEMENT ecrit/execute reste complet, seul l'apercu est abrege
+    script_path = result.rsplit(" ", 1)[-1]  # apres le prefixe SHSS_REQUEST=...
+    assert Path(script_path).read_text() == long_script
+
+
+def test_generate_bash_case_match_shows_full_script_when_short_even_at_high_confidence(monkeypatch, tmp_path):
+    import shss.cases as cases_module
+
+    llm = _fake_shss(monkeypatch, tmp_path, "ne devrait jamais etre lu")
+    case = {"id": "energie", "requests": ["x"], "script": "#!/usr/bin/env bash\necho watts\n"}
+    monkeypatch.setattr(cases_module, "best_match", lambda request, **kw: (case, 0.99, None))
+    seen = {}
+
+    llm.generate_bash("energie consommee par le pc", confirm=lambda text: seen.setdefault("text", text) or True)
+
+    assert "echo watts" in seen["text"]  # court : texte entier montre, meme a 99%
+
+
+def test_generate_bash_case_match_shows_full_script_below_preview_threshold(monkeypatch, tmp_path):
+    import shss.cases as cases_module
+
+    llm = _fake_shss(monkeypatch, tmp_path, "ne devrait jamais etre lu")
+    long_script = "#!/usr/bin/env bash\n" + "echo ligne\n" * 30
+    case = {"id": "energie", "requests": ["x"], "script": long_script}
+    # confiant, mais sous le seuil d'abreviation (0.95 par defaut)
+    monkeypatch.setattr(cases_module, "best_match", lambda request, **kw: (case, 0.80, None))
+    seen = {}
+
+    llm.generate_bash("energie consommee par le pc", confirm=lambda text: seen.setdefault("text", text) or True)
+
+    assert "echo ligne" in seen["text"]
+
+
+def test_generate_bash_template_case_pipes_payload_via_stdin(monkeypatch, tmp_path):
+    import shlex
+
+    import shss.cases as cases_module
+    from shss.resolutions import read_events
+
+    llm = _fake_shss(monkeypatch, tmp_path, "ne devrait jamais etre lu")
+    case = {
+        "id": "fix-select",
+        "requests": ["x"],
+        "script": "#!/usr/bin/env python3\nimport sys\nprint(sys.stdin.read())\n",
+        "input": "stdin",
+    }
+    payload = "select | id | name |   from t;"
+    monkeypatch.setattr(cases_module, "best_match", lambda request, **kw: (case, 0.9, payload))
+
+    written = {}
+    real_write_script = llm_module._write_script
+
+    def spy_write_script(text):
+        path = real_write_script(text)
+        written["path"] = path
+        return path
+
+    monkeypatch.setattr(llm_module, "_write_script", spy_write_script)
+
+    request = 'corrige moi ma ligne bash : "select | id | name |   from t;"'
+    result = llm.generate_bash(request)
+
+    # le resultat est une ligne bash (pipe), pas juste le chemin du script
+    assert result.startswith("printf '%s' ")
+    assert payload in result  # shlex.quote garde le contenu lisible pour ce texte simple
+    assert result.endswith(written["path"])
+    # la demande complete est passee au script via une variable d'env,
+    # jamais collee dans son code
+    assert f"SHSS_REQUEST={shlex.quote(request)}" in result
+    assert request not in Path(written["path"]).read_text()
+    # le script lui-meme, sur disque, ne contient jamais le payload en dur
+    assert payload not in Path(written["path"]).read_text()
+
+    events = read_events()
+    assert events[0]["kind"] == "case"
+    assert events[0]["result"] == result
+
+
+def test_generate_bash_plain_case_match_still_gets_request_env_var(monkeypatch, tmp_path):
+    # Un cas sans "input" garde le comportement d'avant (pas de pipe),
+    # mais dispose quand meme de SHSS_REQUEST.
+    import shlex
+
+    import shss.cases as cases_module
+
+    llm = _fake_shss(monkeypatch, tmp_path, "ne devrait jamais etre lu")
+    case = {"id": "energie", "requests": ["x"], "script": "#!/usr/bin/env bash\necho watts\n"}
+    monkeypatch.setattr(cases_module, "best_match", lambda request, **kw: (case, 0.9, None))
+
+    result = llm.generate_bash("energie consommee par le pc")
+
+    assert "printf" not in result  # pas de pipe, contrairement a un cas gabarit
+    assert result.startswith(f"SHSS_REQUEST={shlex.quote('energie consommee par le pc')} ")
+    assert result.endswith(".sh")
+
+
+def test_generate_bash_case_match_exposes_prefix_suffix_score_and_id(monkeypatch, tmp_path):
+    import shss.cases as cases_module
+
+    llm = _fake_shss(monkeypatch, tmp_path, "ne devrait jamais etre lu")
+    case = {"id": "energie", "requests": ["x"], "script": "#!/usr/bin/env bash\necho watts\n"}
+    monkeypatch.setattr(cases_module, "best_match", lambda request, **kw: (case, 0.8833, None))
+
+    result = llm.generate_bash("energie consommee par le pc", prefix="echo pre ", suffix=" # suite")
+
+    assert "SHSS_PREFIX='echo pre '" in result
+    assert "SHSS_SUFFIX=' # suite'" in result
+    assert "SHSS_MATCH_SCORE=0.8833" in result
+    assert "SHSS_CASE_ID=energie" in result
+
+
+def test_generate_bash_case_match_logs_score_case_id_and_profile_to_history(monkeypatch, tmp_path):
+    import shss.cases as cases_module
+    from shss.resolutions import read_events
+
+    llm = _fake_shss(monkeypatch, tmp_path, "ne devrait jamais etre lu")
+    monkeypatch.setenv("SHSS_CASES_PROFILE", "pc-stats")
+    case = {"id": "energie", "requests": ["x"], "script": "#!/usr/bin/env bash\necho watts\n"}
+    monkeypatch.setattr(cases_module, "best_match", lambda request, **kw: (case, 0.8833, None))
+
+    llm.generate_bash("energie consommee par le pc")
+
+    event = read_events(limit=1)[0]
+    assert event["kind"] == "case"
+    assert event["score"] == 0.8833
+    assert event["case_id"] == "energie"
+    assert event["profile"] == "pc-stats"
+
+
+def test_generate_bash_all_profile_logs_the_matched_profile_not_the_env_var(monkeypatch, tmp_path):
+    import shss.cases as cases_module
+    from shss.resolutions import read_events
+
+    llm = _fake_shss(monkeypatch, tmp_path, "ne devrait jamais etre lu")
+    monkeypatch.setenv("SHSS_CASES_PROFILE", "all")
+    case = {"id": "energie", "requests": ["x"], "script": "#!/usr/bin/env bash\necho watts\n"}
+    monkeypatch.setattr(
+        cases_module, "best_match_all_profiles", lambda request, **kw: (case, 0.9, None, "pc-stats")
+    )
+
+    llm.generate_bash("energie consommee par le pc")
+
+    event = read_events(limit=1)[0]
+    assert event["profile"] == "pc-stats"  # jamais "all" (le mot-cle lui-meme)

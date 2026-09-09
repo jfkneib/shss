@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+#
+# pc-gpu-info -- detail GPU (NVIDIA, via nvidia-smi) : VRAM, charge,
+# temperature, frequences, puissance, ventilateur, driver/CUDA, et les
+# processus qui consomment de la VRAM en ce moment.
+#
+# LIMITE CONNUE : NVIDIA uniquement pour l'instant (nvidia-smi). Un
+# GPU AMD/Intel se detecterait via /sys/class/hwmon (meme principe que
+# detect_hwmon_gpu() dans pc-power) -- pas fait ici, pas de machine
+# AMD/Intel sous la main pour le verifier correctement plutot que de
+# deviner un format de sortie.
+
+set -u
+export LC_NUMERIC=C
+
+if ! command -v nvidia-smi >/dev/null 2>&1; then
+    echo "pc-gpu-info: nvidia-smi absent -- pas de GPU NVIDIA, ou driver non installe." >&2
+    exit 1
+fi
+
+info=$(nvidia-smi --query-gpu=name,driver_version,memory.total,memory.used,memory.free,\
+utilization.gpu,utilization.memory,temperature.gpu,clocks.gr,clocks.mem,power.draw,\
+power.limit,fan.speed --format=csv,noheader,nounits 2>/dev/null)
+
+if [[ -z "$info" ]]; then
+    echo "pc-gpu-info: nvidia-smi n'a renvoye aucun GPU." >&2
+    exit 1
+fi
+
+cuda=$(nvidia-smi -q 2>/dev/null | awk -F': *' '/CUDA Version/ {print $2; exit}')
+
+# printf "%-Ns" compte des OCTETS, pas des caracteres -- un label
+# accentue ("VRAM utilisée", "Température"...) desaligne les deux
+# points a droite (meme bug deja rencontre et corrige dans
+# pc-disk-info). ${#texte} compte juste (locale-aware), on pave a la
+# main plutot que de laisser printf le faire.
+label()
+{
+    local text="$1"
+    local width="$2"
+    local n=$(( width - ${#text} ))
+    (( n < 0 )) && n=0
+    printf '%s%*s: ' "$text" "$n" ""
+}
+
+echo "############################################################"
+echo "                         GPU"
+echo "############################################################"
+echo
+
+echo "$info" | while IFS=',' read -r name driver vram_total vram_used vram_free \
+    load_gpu load_mem temp clk_gpu clk_mem power_draw power_limit fan; do
+
+    name=$(xargs <<<"$name")
+    driver=$(xargs <<<"$driver")
+    vram_total=$(xargs <<<"$vram_total")
+    vram_used=$(xargs <<<"$vram_used")
+    vram_free=$(xargs <<<"$vram_free")
+    load_gpu=$(xargs <<<"$load_gpu")
+    load_mem=$(xargs <<<"$load_mem")
+    temp=$(xargs <<<"$temp")
+    clk_gpu=$(xargs <<<"$clk_gpu")
+    clk_mem=$(xargs <<<"$clk_mem")
+    power_draw=$(xargs <<<"$power_draw")
+    power_limit=$(xargs <<<"$power_limit")
+    fan=$(xargs <<<"$fan")
+
+    vram_pct=$(awk -v u="$vram_used" -v t="$vram_total" 'BEGIN { if (t>0) printf "%.0f", u*100/t; else print "0" }')
+    vram_total_go=$(awk -v m="$vram_total" 'BEGIN { printf "%.1f", m/1024 }')
+    vram_used_go=$(awk -v m="$vram_used" 'BEGIN { printf "%.1f", m/1024 }')
+
+    echo "$name"
+    echo "------------------------------------------------------------"
+    echo "$(label "Driver" 16)$driver"
+    [[ -n "$cuda" ]] && echo "$(label "CUDA" 16)$cuda"
+    echo "$(label "VRAM totale" 16)$vram_total MiB ($vram_total_go Go)"
+    echo "$(label "VRAM utilisée" 16)$vram_used MiB ($vram_used_go Go, ${vram_pct}%)"
+    echo "$(label "VRAM libre" 16)$vram_free MiB"
+    echo "$(label "Charge GPU" 16)$load_gpu %"
+    echo "$(label "Charge mémoire" 16)$load_mem %"
+    echo "$(label "Température" 16)${temp}°C"
+    echo "$(label "Fréquence GPU" 16)$clk_gpu MHz"
+    echo "$(label "Fréquence VRAM" 16)$clk_mem MHz"
+    echo "$(label "Puissance" 16)$power_draw W / $power_limit W (limite)"
+    if [[ "$fan" =~ ^[0-9]+$ ]]; then
+        echo "$(label "Ventilateur" 16)$fan %"
+    else
+        echo "$(label "Ventilateur" 16)non disponible ($fan)"
+    fi
+    echo
+done
+
+procs=$(nvidia-smi --query-compute-apps=pid,used_memory,process_name --format=csv,noheader,nounits 2>/dev/null)
+
+echo "Processus utilisant le GPU :"
+echo "------------------------------------------------------------"
+if [[ -z "$procs" ]]; then
+    echo "(aucun)"
+else
+    echo "$procs" | while IFS=',' read -r pid mem proc; do
+        pid=$(xargs <<<"$pid")
+        mem=$(xargs <<<"$mem")
+        proc=$(xargs <<<"$proc")
+        printf "  PID %-8s %6s MiB  %s\n" "$pid" "$mem" "$proc"
+    done
+fi

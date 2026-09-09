@@ -1,0 +1,200 @@
+#!/usr/bin/env bash
+#
+# pc-battery-info -- etat des batteries et de l'alimentation secteur,
+# via /sys/class/power_supply/ (interface noyau standard, pas
+# specifique a un modele de portable).
+#
+# Pourquoi ce script existe : demande a un petit modele de generer ca
+# a la volee (pas de cas curate) lui fait deviner un chemin fige —
+# souvent /sys/class/power_supply/BAT0/capacity, qui n'existe pas sur
+# toutes les machines (BAT1, numerotation differente, ou carrement
+# pas de batterie). Ce script ne devine rien : il liste ce qui existe
+# reellement sur CETTE machine au moment de l'execution.
+#
+# LIMITE CONNUE : ecrit et teste sur un desktop SANS batterie (le
+# repertoire /sys/class/power_supply/ y existe mais reste vide) --
+# cette branche-la (aucune batterie) est verifiee reelle. La branche
+# "batterie presente" repose sur l'ABI sysfs standard du noyau
+# (Documentation/ABI/testing/sysfs-class-power) mais n'a pas pu etre
+# testee faute de materiel portable ici -- a valider sur une vraie
+# machine avec batterie avant de considerer ce script fiable a 100%.
+
+set -u
+export LC_NUMERIC=C
+
+PS_DIR="/sys/class/power_supply"
+
+label()
+{
+    local text="$1"
+    local width="$2"
+    local n=$(( width - ${#text} ))
+    (( n < 0 )) && n=0
+    printf '%s%*s: ' "$text" "$n" ""
+}
+
+# STATUS_FR["Charging"]="En charge", etc. -- les valeurs de status sont
+# en anglais, fixes par le noyau (pas de traduction fournie par le
+# driver), donc a traduire nous-memes pour un rapport en francais.
+declare -A STATUS_FR=(
+    [Charging]="En charge"
+    [Discharging]="En décharge"
+    [Full]="Pleine"
+    ["Not charging"]="En pause (branché, ne charge pas)"
+    [Unknown]="Inconnu"
+)
+
+# read_attr DEVICE_DIR ATTR -> valeur, ou vide si absente (tous les
+# attributs sysfs power_supply sont optionnels selon le driver -- ne
+# jamais supposer qu'un fichier donne existe).
+read_attr()
+{
+    local f="$1/$2"
+    [[ -r "$f" ]] && cat "$f" 2>/dev/null
+}
+
+# fmt_hours HEURES_DECIMALES -> "Xh YYmin"
+fmt_hours()
+{
+    awk -v h="$1" 'BEGIN {
+        total_min = h * 60
+        hh = int(total_min / 60)
+        mm = int(total_min) % 60
+        printf "%dh%02dmin", hh, mm
+    }'
+}
+
+report_battery()
+{
+    local dir="$1"
+    local name status present capacity capacity_level technology
+    local model manufacturer cycles
+    local energy_now energy_full power_now
+    local charge_now charge_full current_now
+
+    name=$(basename "$dir")
+    present=$(read_attr "$dir" present)
+    status=$(read_attr "$dir" status)
+    capacity=$(read_attr "$dir" capacity)
+    capacity_level=$(read_attr "$dir" capacity_level)
+    technology=$(read_attr "$dir" technology)
+    model=$(read_attr "$dir" model_name)
+    manufacturer=$(read_attr "$dir" manufacturer)
+    cycles=$(read_attr "$dir" cycle_count)
+
+    echo "$name"
+    echo "------------------------------------------------------------"
+
+    if [[ "$present" == "0" ]]; then
+        echo "  (emplacement présent, batterie absente)"
+        echo
+        return
+    fi
+
+    if [[ -n "$capacity" ]]; then
+        echo "$(label "Niveau" 16)${capacity} %"
+    elif [[ -n "$capacity_level" ]]; then
+        # Certains drivers n'exposent que ce niveau qualitatif
+        # (Full/Normal/Low/Critical), pas de pourcentage exact.
+        echo "$(label "Niveau" 16)${capacity_level} (pourcentage non fourni par ce matériel)"
+    else
+        echo "$(label "Niveau" 16)non disponible"
+    fi
+
+    echo "$(label "État" 16)${STATUS_FR[$status]:-${status:-inconnu}}"
+    [[ -n "$technology" ]] && echo "$(label "Technologie" 16)$technology"
+    [[ -n "$manufacturer" || -n "$model" ]] && \
+        echo "$(label "Modèle" 16)${manufacturer:-} ${model:-}"
+    if [[ -n "$cycles" && "$cycles" != "0" ]]; then
+        echo "$(label "Cycles" 16)$cycles"
+    fi
+
+    # Temps restant : calcule a partir de energie/puissance instantanees
+    # si le driver les fournit (energy_* en µWh, ou charge_*/current_*
+    # en µAh/µA selon le modele -- jamais les deux a la fois en
+    # pratique) ; rien d'invente si l'un des deux manque.
+    energy_now=$(read_attr "$dir" energy_now)
+    energy_full=$(read_attr "$dir" energy_full)
+    power_now=$(read_attr "$dir" power_now)
+    charge_now=$(read_attr "$dir" charge_now)
+    charge_full=$(read_attr "$dir" charge_full)
+    current_now=$(read_attr "$dir" current_now)
+
+    local remaining_h=""
+    if [[ "$status" == "Discharging" ]]; then
+        if [[ -n "$energy_now" && -n "$power_now" && "$power_now" != "0" ]]; then
+            remaining_h=$(awk -v e="$energy_now" -v p="$power_now" 'BEGIN { printf "%.4f", e / p }')
+            echo "$(label "Temps restant" 16)$(fmt_hours "$remaining_h") (estimation, puissance instantanée)"
+        elif [[ -n "$charge_now" && -n "$current_now" && "$current_now" != "0" ]]; then
+            remaining_h=$(awk -v c="$charge_now" -v i="$current_now" 'BEGIN { printf "%.4f", c / i }')
+            echo "$(label "Temps restant" 16)$(fmt_hours "$remaining_h") (estimation, courant instantané)"
+        fi
+    elif [[ "$status" == "Charging" ]]; then
+        if [[ -n "$energy_now" && -n "$energy_full" && -n "$power_now" && "$power_now" != "0" ]]; then
+            remaining_h=$(awk -v en="$energy_now" -v ef="$energy_full" -v p="$power_now" \
+                'BEGIN { printf "%.4f", (ef - en) / p }')
+            echo "$(label "Temps avant 100%" 16)$(fmt_hours "$remaining_h") (estimation, puissance instantanée)"
+        elif [[ -n "$charge_now" && -n "$charge_full" && -n "$current_now" && "$current_now" != "0" ]]; then
+            remaining_h=$(awk -v cn="$charge_now" -v cf="$charge_full" -v i="$current_now" \
+                'BEGIN { printf "%.4f", (cf - cn) / i }')
+            echo "$(label "Temps avant 100%" 16)$(fmt_hours "$remaining_h") (estimation, courant instantané)"
+        fi
+    fi
+
+    echo
+}
+
+main()
+{
+    echo "############################################################"
+    echo "                  BATTERIE / ALIMENTATION"
+    echo "Machine : $(hostname)"
+    echo "############################################################"
+    echo
+
+    if [[ ! -d "$PS_DIR" ]]; then
+        echo "Aucune interface d'alimentation détectée (pas de $PS_DIR -- noyau/matériel non standard)."
+        return 0
+    fi
+
+    local batteries=() sources=()
+    local dir type
+    for dir in "$PS_DIR"/*; do
+        [[ -d "$dir" ]] || continue
+        type=$(read_attr "$dir" type)
+        case "$type" in
+            Battery) batteries+=("$dir") ;;
+            Mains|USB) sources+=("$dir") ;;
+        esac
+    done
+
+    if (( ${#batteries[@]} == 0 )); then
+        echo "Aucune batterie détectée sur cette machine (desktop, ou pile bouton non listée ici)."
+        echo
+    else
+        for dir in "${batteries[@]}"; do
+            report_battery "$dir"
+        done
+    fi
+
+    if (( ${#sources[@]} > 0 )); then
+        echo "Alimentation externe :"
+        echo "------------------------------------------------------------"
+        local online any_online=0
+        for dir in "${sources[@]}"; do
+            online=$(read_attr "$dir" online)
+            [[ "$online" == "1" ]] && any_online=1
+            echo "  $(basename "$dir") : $([[ "$online" == "1" ]] && echo "branché" || echo "débranché")"
+        done
+        echo
+        if (( ${#batteries[@]} > 0 )); then
+            if (( any_online )); then
+                echo "Sur secteur."
+            else
+                echo "Sur batterie (pas d'alimentation externe détectée)."
+            fi
+        fi
+    fi
+}
+
+main "$@"

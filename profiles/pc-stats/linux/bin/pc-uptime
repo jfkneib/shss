@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+#
+# pc-uptime -- statistiques d'allumage/extinction pour un mois donne.
+#
+# Usage : pc-uptime [AAAA-MM|MM]   (defaut : mois courant, jusqu'a
+#                                   maintenant s'il n'est pas termine)
+
+set -u
+export LC_NUMERIC=C
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=../lib/pc-stats-common.sh
+source "$SCRIPT_DIR/../lib/pc-stats-common.sh"
+
+stats_require jq "sudo apt install jq"
+
+stats_parse_month "${1:-}"
+
+month_start=$(date -d "${STATS_MONTH_ARG}-01" +%s) || exit 1
+month_end=$(date -d "${STATS_MONTH_ARG}-01 +1 month" +%s) || exit 1
+now=$(date +%s)
+month_end_clamped=$(( month_end < now ? month_end : now ))
+
+if (( month_end_clamped <= month_start )); then
+    echo "pc-uptime: aucune donnee pour ${STATS_MONTH_ARG} (mois futur)" >&2
+    exit 1
+fi
+
+stats_uptime "$month_start" "$month_end_clamped"
+
+avg_daily_seconds=$(awk -v s="$STATS_ON_SECONDS" -v t="$STATS_TOTAL_SECONDS" \
+    'BEGIN { d = t / 86400; if (d > 0) printf "%.0f", s / d; else print 0 }')
+usage_pct=$(awk -v on="$STATS_ON_SECONDS" -v t="$STATS_TOTAL_SECONDS" \
+    'BEGIN { if (t > 0) printf "%.1f", on * 100 / t; else print "0.0" }')
+
+mois_nom=$(stats_month_name "$STATS_MONTH")
+
+echo
+echo "${mois_nom^^} ${STATS_YEAR}"
+echo
+printf "%-24s %s\n" "Démarrages" "$STATS_BOOT_COUNT"
+printf "%-24s %s\n" "Temps allumé" "$(stats_fmt_hm "$STATS_ON_SECONDS")"
+printf "%-24s %s\n" "Temps éteint" "$(stats_fmt_hm "$STATS_OFF_SECONDS")"
+printf "%-24s %s\n" "Moyenne quotidienne" "$(stats_fmt_hm "$avg_daily_seconds")"
+printf "%-24s %s %%\n" "Taux d'utilisation" "$usage_pct"

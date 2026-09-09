@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+#
+# tm-list -- liste les sessions tmux en cours.
+#
+# Non interactif : fonctionne partout (REPL, -c, Ctrl-G/bashrc), pas
+# de contrainte de terminal ici, contrairement a tm-new-session/
+# tm-attach (voir leurs commentaires).
+
+set -u
+
+output="$(tmux ls 2>&1)"
+status=$?
+
+if [ "$status" -ne 0 ]; then
+    # tmux renvoie 1 et un message d'erreur des qu'aucun serveur ne
+    # tourne (aucune session ouverte) -- pas une vraie erreur, le cas
+    # le plus courant au premier essai.
+    echo "Aucune session tmux en cours."
+    exit 0
+fi
+
+echo "$output"

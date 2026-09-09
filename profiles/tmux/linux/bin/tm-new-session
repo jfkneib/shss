@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+#
+# tm-new-session <nom> -- cree une session tmux et s'y attache tout de
+# suite (equivalent a `tmux new -s <nom>`).
+#
+# Interactif par nature : tmux prend le controle plein ecran du
+# terminal en cours -- besoin d'un vrai terminal (stdin ET stdout).
+# Verifie en pratique (voir profiles/tmux/README.md) : via un shell
+# sans TTY (comme PersistentShell, utilise par le REPL shss et le mode
+# -c -- src/shss/shell.py), tmux echoue immediatement avec "open
+# terminal failed: not a terminal" ; avec un vrai TTY (le cas de
+# l'integration bashrc/Ctrl-G, qui splice la ligne resolue dans le
+# vrai terminal de l'utilisateur), ca fonctionne normalement. On
+# detecte ce cas ici pour donner un message clair plutot que de
+# laisser filer l'erreur brute de tmux.
+
+set -u
+
+name="${1:?usage: tm-new-session <nom>}"
+
+if [ ! -t 0 ] || [ ! -t 1 ]; then
+    echo "tm-new-session : pas de terminal reel ici -- ce cas ne fonctionne" >&2
+    echo "que via l'integration Ctrl-G/bashrc (shell-integration/shss.bash)," >&2
+    echo "pas dans le REPL shss ni en mode -c (voir profiles/tmux/README.md)." >&2
+    echo "La session peut quand meme etre creee en arriere-plan avec :" >&2
+    echo "  tmux new -d -s '$name'" >&2
+    exit 1
+fi
+
+if tmux has-session -t "$name" 2>/dev/null; then
+    echo "tm-new-session : une session '$name' existe deja -- rattachement plutot que recreation." >&2
+    exec tmux attach -t "$name"
+fi
+
+exec tmux new -s "$name"

@@ -1,0 +1,131 @@
+#!/usr/bin/env bash
+#
+# pc-net-info -- interfaces reseau : etat, MAC, IP, MTU, vitesse/duplex,
+# pilote, compteurs RX/TX (paquets, erreurs, perdus) pour les
+# interfaces physiques ; liste compacte pour le reste (ponts,
+# conteneurs, veth) -- sinon Docker/libvirt noient le rapport sous des
+# interfaces virtuelles sans grand interet individuel.
+#
+# LIMITE CONNUE : "recu"/"envoye" sont les compteurs cumules depuis le
+# dernier redemarrage de l'interface (pas depuis minuit) -- pas de
+# "telecharge aujourd'hui" fiable sans historique horodate (voir
+# data/power.csv pour le principe, applicable ici aussi si besoin un
+# jour).
+
+set -u
+export LC_NUMERIC=C
+
+# printf "%-Ns" compte des octets, pas des caracteres (meme bug deja
+# rencontre et corrige dans pc-disk-info/pc-gpu-info) -- pave a la main.
+label()
+{
+    local text="$1"
+    local width="$2"
+    local n=$(( width - ${#text} ))
+    (( n < 0 )) && n=0
+    printf '%s%*s: ' "$text" "$n" ""
+}
+
+is_physical()
+{
+    [[ -e "/sys/class/net/$1/device" ]]
+}
+
+fmt_bytes()
+{
+    awk -v b="$1" 'BEGIN {
+        split("o Ko Mo Go To", u, " ")
+        i = 1
+        while (b >= 1024 && i < 5) { b /= 1024; i++ }
+        printf "%.1f %s", b, u[i]
+    }'
+}
+
+print_iface_detail()
+{
+    local iface="$1"
+    local state mac mtu driver speed duplex ipv4 ipv6
+    local rx_b tx_b rx_p tx_p rx_e tx_e rx_d tx_d
+
+    state=$(cat "/sys/class/net/$iface/operstate" 2>/dev/null)
+    mac=$(cat "/sys/class/net/$iface/address" 2>/dev/null)
+    mtu=$(cat "/sys/class/net/$iface/mtu" 2>/dev/null)
+    driver=$(basename "$(readlink -f "/sys/class/net/$iface/device/driver" 2>/dev/null)" 2>/dev/null)
+
+    speed=""
+    duplex=""
+    if command -v ethtool >/dev/null 2>&1; then
+        speed=$(ethtool "$iface" 2>/dev/null | awk -F': ' '/Speed/ {print $2}')
+        duplex=$(ethtool "$iface" 2>/dev/null | awk -F': ' '/Duplex/ {print $2}')
+    fi
+
+    ipv4=$(ip -4 -br addr show "$iface" 2>/dev/null | awk '{for (i=3;i<=NF;i++) printf "%s ", $i}' | xargs)
+    ipv6=$(ip -6 -br addr show "$iface" 2>/dev/null | awk '{for (i=3;i<=NF;i++) printf "%s ", $i}' | xargs)
+
+    rx_b=$(cat "/sys/class/net/$iface/statistics/rx_bytes" 2>/dev/null)
+    tx_b=$(cat "/sys/class/net/$iface/statistics/tx_bytes" 2>/dev/null)
+    rx_p=$(cat "/sys/class/net/$iface/statistics/rx_packets" 2>/dev/null)
+    tx_p=$(cat "/sys/class/net/$iface/statistics/tx_packets" 2>/dev/null)
+    rx_e=$(cat "/sys/class/net/$iface/statistics/rx_errors" 2>/dev/null)
+    tx_e=$(cat "/sys/class/net/$iface/statistics/tx_errors" 2>/dev/null)
+    rx_d=$(cat "/sys/class/net/$iface/statistics/rx_dropped" 2>/dev/null)
+    tx_d=$(cat "/sys/class/net/$iface/statistics/tx_dropped" 2>/dev/null)
+
+    echo "$iface"
+    echo "------------------------------------------------------------"
+    echo "$(label "État" 16)$state"
+    echo "$(label "MAC" 16)$mac"
+    [[ -n "$ipv4" ]] && echo "$(label "IPv4" 16)$ipv4"
+    [[ -n "$ipv6" ]] && echo "$(label "IPv6" 16)$ipv6"
+    echo "$(label "MTU" 16)$mtu"
+    [[ -n "$driver" ]] && echo "$(label "Pilote" 16)$driver"
+    [[ -n "$speed" && "$speed" != "Unknown!" ]] && echo "$(label "Vitesse" 16)$speed"
+    [[ -n "$duplex" && "$duplex" != "Unknown! (255)" ]] && echo "$(label "Duplex" 16)$duplex"
+    echo "$(label "Reçu" 16)$(fmt_bytes "${rx_b:-0}") (${rx_p:-0} paquets, ${rx_e:-0} erreurs, ${rx_d:-0} perdus)"
+    echo "$(label "Envoyé" 16)$(fmt_bytes "${tx_b:-0}") (${tx_p:-0} paquets, ${tx_e:-0} erreurs, ${tx_d:-0} perdus)"
+    echo
+}
+
+print_iface_compact()
+{
+    local iface="$1"
+    local state ip
+    state=$(cat "/sys/class/net/$iface/operstate" 2>/dev/null)
+    ip=$(ip -4 -br addr show "$iface" 2>/dev/null | awk '{print $3}')
+    printf "  %-20s %-8s %s\n" "$iface" "$state" "${ip:--}"
+}
+
+main()
+{
+    echo "############################################################"
+    echo "                        RÉSEAU"
+    echo "Machine : $(hostname)"
+    echo "############################################################"
+    echo
+
+    local iface physical=() virtual=()
+    for iface in /sys/class/net/*; do
+        iface=$(basename "$iface")
+        [[ "$iface" == "lo" ]] && continue
+        if is_physical "$iface"; then
+            physical+=("$iface")
+        else
+            virtual+=("$iface")
+        fi
+    done
+
+    for iface in "${physical[@]}"; do
+        print_iface_detail "$iface"
+    done
+
+    if (( ${#virtual[@]} > 0 )); then
+        echo "Interfaces virtuelles / conteneurs / ponts :"
+        echo "------------------------------------------------------------"
+        for iface in "${virtual[@]}"; do
+            print_iface_compact "$iface"
+        done
+        echo
+    fi
+}
+
+main "$@"
