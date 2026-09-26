@@ -715,6 +715,22 @@ main()
     echo
     echo "  Prix utilisé : ${KWH_PRICE} €/kWh"
 
+    # Contrairement à la projection 24h/jour ci-dessus (qui suppose une
+    # charge constante, hypothèse), l'énergie ci-dessous porte sur la
+    # fenêtre de mesure elle-même : puissance moyenne réellement observée
+    # (${total} W) × durée réellement écoulée (${INTERVAL}s) -- un calcul,
+    # pas une hypothèse.
+    local joules cal kcal
+    joules=$(awk -v w="$total" -v t="$INTERVAL" 'BEGIN {printf "%.0f", w * t}')
+    cal=$(awk -v j="$joules" 'BEGIN {printf "%.0f", j / 4.184}')
+    kcal=$(awk -v j="$joules" 'BEGIN {printf "%.2f", j / 4184}')
+
+    echo
+    echo "  Pendant les ${INTERVAL}s de mesure (à ${total} W) :"
+    echo "    ${joules} J ≈ ${cal} cal ≈ ${kcal} kcal"
+    echo "    (cal = petite calorie/thermochimique, 4.184 J ; kcal = grande"
+    echo "    calorie/\"Calorie\" alimentaire, 1000x plus -- souvent confondues)"
+
     echo
     echo "${DIM}Attention :"
     echo "  CPU/GPU/RAPL = mesures matérielles lorsque disponibles."
