@@ -2,7 +2,8 @@
 
 Chaque sous-dossier ici est un **profil** de cas curatés pour shss
 (voir `docs/shss-cases.md` à la racine du dépôt pour le mécanisme
-général) : un domaine de spécialité — supervision système, aide sur
+général) — pour un guide pas à pas (écrire son premier
+profil, méta-langage `#@ … @#`), voir `docs/profils-howto.md` : un domaine de spécialité — supervision système, aide sur
 un outil interne, autre chose — activable indépendamment via
 `SHSS_CASES_PROFILE`. `pc-stats/` est le premier, sert de référence
 complète (12 cas, tout le mécanisme mis en pratique, y compris ses
